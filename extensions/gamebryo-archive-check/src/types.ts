@@ -7,7 +7,7 @@ export interface IDataArchive {
 
 export interface IIncompatibleArchive {
   name: string;
-  version: string;
+  version: number;
   validVersion: string;
   plugin: any; // IPluginCombined isn't exported and I think I prefer it that way.
   mod: types.IMod;
