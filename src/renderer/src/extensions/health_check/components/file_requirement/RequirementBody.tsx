@@ -11,6 +11,7 @@ import {
   type IFileRequirementReport,
 } from "@/extensions/health_check/utils/fileRequirements/fileRequirementReport";
 import type { IFileRequirement } from "@/extensions/health_check/utils/fileRequirements/mapRequirementsReport";
+import { sharedRequirementState } from "@/extensions/health_check/utils/shared/tracking";
 import type { IExtensionApi } from "@/types/IExtensionContext";
 import { Button } from "@/ui/components/button/Button";
 import { PremiumBadge } from "@/ui/components/premium_badge/PremiumBadge";
@@ -41,20 +42,16 @@ const groupTitleKey = (category: FileRequirementCategory): string => {
   }
 };
 
-const requirementRows = (
-  requirement: IFileRequirement,
-  ctx: IFileActionContext,
-  api: IExtensionApi,
-) => {
+const requirementRows = (requirement: IFileRequirement, ctx: IFileActionContext) => {
   switch (requirement.kind) {
     case "missing":
       return <DownloadRows ctx={ctx} requirement={requirement} />;
     case "wrong-version-installed":
       return <ReplaceRows ctx={ctx} requirement={requirement} />;
     case "correct-version-uninstalled":
-      return <InstallUninstalledRows api={api} requirement={requirement} />;
+      return <InstallUninstalledRows ctx={ctx} requirement={requirement} />;
     case "wrong-version-enabled":
-      return <ToggleRows api={api} requirement={requirement} />;
+      return <ToggleRows ctx={ctx} requirement={requirement} />;
     case "or":
       return <OrRows ctx={ctx} requirement={requirement} />;
   }
@@ -81,6 +78,7 @@ export const RequirementBody = ({
   ctx: IFileActionContext;
   api: IExtensionApi;
 }) => {
+  const { identity } = ctx;
   const { t } = useTranslation("health_check");
   const [premiumOpen, setPremiumOpen] = useState(false);
   const [downloadingAll, setDownloadingAll] = useState(false);
@@ -102,13 +100,14 @@ export const RequirementBody = ({
   };
 
   const installAll = () => {
+    ctx.onInstallAll(installAllCandidates, sharedRequirementState(requirements));
     if (ctx.showPremiumAd) {
       setPremiumOpen(true);
       return;
     }
     setDownloadingAll(true);
     void Promise.all(
-      installAllCandidates.map((candidate) => downloadFileRequirement(api, candidate)),
+      installAllCandidates.map((candidate) => downloadFileRequirement(api, candidate, identity)),
     ).then((results) => {
       // On full success the requirements clear and this view unmounts; only reset
       // when something failed and the buttons are still around.
@@ -140,7 +139,7 @@ export const RequirementBody = ({
         <RequirementGroup actions={installAllAction} title={title}>
           {requirements.map((requirement) => (
             <React.Fragment key={requirement.requirementDefId}>
-              {requirementRows(requirement, rowCtx, api)}
+              {requirementRows(requirement, rowCtx)}
             </React.Fragment>
           ))}
         </RequirementGroup>
@@ -150,7 +149,7 @@ export const RequirementBody = ({
             {index > 0 && <AndDivider />}
 
             <RequirementGroup actions={index === 0 ? installAllAction : undefined} title={title}>
-              {requirementRows(requirement, rowCtx, api)}
+              {requirementRows(requirement, rowCtx)}
             </RequirementGroup>
           </React.Fragment>
         ))
@@ -159,6 +158,8 @@ export const RequirementBody = ({
       <PremiumModal
         downloadScope="all"
         isOpen={premiumOpen}
+        modCount={installAllCandidates.length}
+        trigger="batch_install"
         onClose={() => setPremiumOpen(false)}
         onDownload={() => setPremiumOpen(false)}
       />

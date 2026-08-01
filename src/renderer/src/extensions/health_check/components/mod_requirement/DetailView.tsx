@@ -1,5 +1,11 @@
-import { mdiCheck, mdiHelpCircleOutline, mdiMonitorArrowDownVariant, mdiOpenInNew } from "@mdi/js";
-import React, { useCallback, useMemo } from "react";
+import {
+  mdiCheck,
+  mdiHelpCircleOutline,
+  mdiMonitorArrowDownVariant,
+  mdiOpenInNew,
+  mdiWeb,
+} from "@mdi/js";
+import React, { useCallback, useEffect, useMemo } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { useSelector } from "react-redux";
 
@@ -13,10 +19,12 @@ import { TypographyLink } from "@/ui/components/typography/TypographyLink";
 import { opn } from "@/util/api";
 
 import { setModRequirementHidden } from "../../actions/persistent";
+import { useIssue, useIssueTracking } from "../../hooks/HealthCheckTracking.context";
 import { useModRequirementActions } from "../../hooks/useModRequirementActions";
 import { hiddenModRequirements } from "../../selectors";
 import type { IModRequirementExt } from "../../types";
 import type { IDetailViewProps } from "../../views/content/types";
+import { Divider } from "../divider/Divider";
 import { EntryActions } from "../entry_actions/EntryActions";
 import { FileRequirement } from "../file_requirement/FileRequirement";
 import { PremiumModal } from "../premium_modal/PremiumModal";
@@ -25,6 +33,8 @@ export const DetailView = ({ entry, api, onBack }: IDetailViewProps) => {
   const { t } = useTranslation(["health_check", "common"]);
   const mod = entry.data as IModRequirementExt;
 
+  const { identity, issueType, resolutionType } = useIssue();
+
   const {
     givenFeedback,
     showPremiumAd,
@@ -32,9 +42,8 @@ export const DetailView = ({ entry, api, onBack }: IDetailViewProps) => {
     setShowPremiumModal,
     openModPage,
     installInApp,
-    handlePositiveFeedback,
-    handleFeedbackSuccess,
-  } = useModRequirementActions(api, mod, onBack);
+    markFeedback,
+  } = useModRequirementActions(api, mod, identity, onBack);
 
   const hiddenRequirementMap = useSelector(hiddenModRequirements);
   const isHidden = useMemo(
@@ -42,16 +51,91 @@ export const DetailView = ({ entry, api, onBack }: IDetailViewProps) => {
     [hiddenRequirementMap, mod.requiredBy.modId, mod.id],
   );
 
+  const {
+    trackDetailViewed,
+    trackOneClickInstallClicked,
+    trackInstallViaModPageClicked,
+    trackViewModPageClicked,
+    trackSuggestionSourceLinkClicked,
+    trackIssueHidden,
+    trackIssueUnhidden,
+  } = useIssueTracking();
+  const modVersion = mod.mainFile?.version ?? "";
+
+  // detail_viewed fires once per detail open; entry-prop changes as the check re-runs
+  // shouldn't re-fire it, so the mount-only effect is intentional.
+  useEffect(() => {
+    trackDetailViewed({
+      issue_type: issueType,
+      resolution_type: resolutionType,
+      required_mod_count: 1,
+      source_mod_name: mod.requiredBy.modName,
+    });
+    // eslint-disable-next-line @eslint-react/exhaustive-deps
+  }, []);
+
+  const handleInstall = () => {
+    trackOneClickInstallClicked({
+      mod_id: mod.modId,
+      mod_name: mod.modName,
+      mod_version: modVersion,
+      is_adult_content: mod.mainFile?.adultContent ?? false,
+    });
+
+    void installInApp();
+  };
+
+  // Free users are routed to the website to install (a resolution action); premium users
+  // clicking through to the mod page is informational — track them as distinct events.
+  const handleModPage = () => {
+    const modPageProps = {
+      mod_id: mod.modId,
+      mod_name: mod.modName,
+      mod_version: modVersion,
+    };
+
+    if (showPremiumAd) {
+      trackInstallViaModPageClicked(modPageProps);
+    } else {
+      trackViewModPageClicked(modPageProps);
+    }
+
+    openModPage();
+  };
+
   const openRequiringModPage = useCallback(() => {
+    trackSuggestionSourceLinkClicked({
+      mod_id: mod.requiredBy.modId,
+    });
+
     if (mod.requiredBy.modUrl) {
       opn(mod.requiredBy.modUrl).catch(() => undefined);
     }
-  }, [mod.requiredBy.modUrl]);
+  }, [trackSuggestionSourceLinkClicked, mod.requiredBy.modId, mod.requiredBy.modUrl]);
 
   const handleToggleHide = useCallback(() => {
+    if (isHidden) {
+      trackIssueUnhidden({ issue_type: issueType });
+    } else {
+      trackIssueHidden({
+        issue_type: issueType,
+        resolution_type: resolutionType,
+      });
+    }
+
     api.store?.dispatch(setModRequirementHidden(mod.requiredBy.modId, mod.id, !isHidden));
     onBack();
-  }, [api, mod.requiredBy.modId, mod.id, isHidden, onBack]);
+  }, [
+    api,
+    mod.requiredBy.modId,
+    mod.id,
+    isHidden,
+    onBack,
+    issueType,
+    resolutionType,
+    trackIssueHidden,
+    trackIssueUnhidden,
+  ]);
 
   // External installs can't be auto-detected, so confirming just hides the
   // requirement from future checks.
@@ -60,8 +144,6 @@ export const DetailView = ({ entry, api, onBack }: IDetailViewProps) => {
     onBack();
   }, [api, mod.requiredBy.modId, mod.id, onBack]);
 
-  // mainFile is denormalized by the check, so no fetch is needed here.
-  const fileData = modToFileData(mod, mod.mainFile);
   const severityStyle = severityStyleMap[entry.severity];
 
   return (
@@ -81,8 +163,8 @@ export const DetailView = ({ entry, api, onBack }: IDetailViewProps) => {
             isHidden={isHidden}
             severity={entry.severity}
             variant="detail"
-            onHelpful={handlePositiveFeedback}
-            onNotHelpful={handleFeedbackSuccess}
+            onHelpful={markFeedback}
+            onNotHelpful={markFeedback}
             onToggleHide={handleToggleHide}
           />
         </div>
@@ -116,7 +198,7 @@ export const DetailView = ({ entry, api, onBack }: IDetailViewProps) => {
                       brand="neutral"
                       leftIconPath={mdiOpenInNew}
                       size="sm"
-                      onClick={openModPage}
+                      onClick={handleModPage}
                     >
                       {t("detail::item::install_via_mod_page")}
                     </Button>
@@ -128,32 +210,53 @@ export const DetailView = ({ entry, api, onBack }: IDetailViewProps) => {
                     leftIconPath={mdiMonitorArrowDownVariant}
                     rightIcon={showPremiumAd ? <PremiumBadge /> : undefined}
                     size="sm"
-                    onClick={() => void installInApp()}
+                    onClick={handleInstall}
                   >
                     {t("detail::item::install_one_click")}
                   </Button>
                 </>
               )
             }
-            file={fileData}
+            file={
+              mod.externalRequirement
+                ? {
+                    ...modToFileData(mod, mod.mainFile),
+                    modDescription: t("detail::item::external_hosted_note"),
+                    fileName: mod.modUrl ?? "",
+                    fileVersion: "",
+                  }
+                : modToFileData(mod, mod.mainFile)
+            }
+            {...(mod.externalRequirement
+              ? { fileIconPath: mdiWeb, hideImage: true, onOpenFile: openModPage }
+              : {})}
           />
 
           {mod.externalRequirement && (
-            <div className="flex items-center gap-x-3 rounded-sm bg-info-weak/20 p-3">
-              <Typography appearance="moderate" as="div" className="grow" typographyType="body-sm">
-                {t("detail::item::after_installing")}
-              </Typography>
+            <>
+              <Divider variant="and" />
 
-              <Button
-                appearance="moderate"
-                brand="neutral"
-                leftIconPath={mdiCheck}
-                size="sm"
-                onClick={handleConfirmInstall}
-              >
-                {t("detail::item::confirm_install")}
-              </Button>
-            </div>
+              <div className="mx-6 flex items-center gap-x-3 rounded-sm bg-info-weak/20 p-3">
+                <Typography
+                  appearance="moderate"
+                  as="div"
+                  className="grow"
+                  typographyType="body-sm"
+                >
+                  {t("detail::item::after_installing")}
+                </Typography>
+
+                <Button
+                  appearance="moderate"
+                  brand="neutral"
+                  leftIconPath={mdiCheck}
+                  size="sm"
+                  onClick={handleConfirmInstall}
+                >
+                  {t("detail::item::confirm_install")}
+                </Button>
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -184,6 +287,9 @@ export const DetailView = ({ entry, api, onBack }: IDetailViewProps) => {
 
       <PremiumModal
         isOpen={showPremiumModal}
+        modCount={1}
+        modId={mod.modId}
+        trigger="single_install"
         onClose={() => setShowPremiumModal(false)}
         onDownload={() => {
           setShowPremiumModal(false);

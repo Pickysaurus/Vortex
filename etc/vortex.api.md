@@ -104,7 +104,7 @@ import { writeSync } from 'original-fs';
 // @public (undocumented)
 export class ActionContextMenu extends React_2.Component<ExportType> {
     // (undocumented)
-    render(): JSX.Element;
+    render(): React_2.JSX.Element;
 }
 
 // Warning: (ae-forgotten-export) The symbol "ExportType_2" needs to be exported by the entry point api.d.ts
@@ -122,6 +122,7 @@ declare namespace actions {
         setNextProfile,
         setStateVersion,
         setApplicationVersion,
+        addExtension,
         setExtensionEnabled,
         setExtensionVersion,
         setExtensionEndorsed,
@@ -373,6 +374,12 @@ result: IDiscoveredTool;
 manual: boolean;
 }, {}>;
 
+// @public (undocumented)
+const addExtension: reduxAct.ComplexActionCreator2<string, ExtensionInfo, {
+    extensionId: string;
+    info: ExtensionInfo;
+}, {}>;
+
 // @public
 const addLocalDownload: ComplexActionCreator4<string, string, string, number, {
 id: string;
@@ -401,14 +408,14 @@ const addMods: reduxAct.ComplexActionCreator2<string, IMod[], {
 }, {}>;
 
 // @public
-function addNotification(notification: INotification): (dispatch: any) => Promise_2<void> | Promise<void>;
+function addNotification(notification: INotification): (dispatch: any) => Promise<void> | Promise_2<void>;
 
 // @public (undocumented)
 function addReducer<ActionT, StateT>(action: ActionT, handler: (state: StateT, payload: PayloadT<ActionT>) => StateT): {
     [x: number]: (state: StateT, payload: PayloadT<ActionT>) => StateT;
 };
 
-// @public
+// @public @deprecated
 function addUniqueSafe<T>(state: T, path: Array<string | number>, value: any): T;
 
 // @public (undocumented)
@@ -502,7 +509,7 @@ function buildCopyInstructions(files: readonly string[], opts: {
 // @public
 class Button_2 extends React_2.PureComponent<ButtonProps, {}> {
     // (undocumented)
-    render(): JSX.Element;
+    render(): React_2.JSX.Element;
 }
 
 // @public (undocumented)
@@ -542,7 +549,7 @@ function changeFileAttributes(filePath: string, wantedAttributes: number, stat: 
 // @public (undocumented)
 function changeFileOwnership(filePath: string, stat: fs_2.Stats): Promise_2<void>;
 
-// @public
+// @public @deprecated
 function changeOrNop<T>(state: T, path: Array<string | number>, value: any): T;
 
 // @public (undocumented)
@@ -801,7 +808,7 @@ export const ContextMenu: React_2.ComponentClass<IContextMenuProps>;
 // @public
 function convertGameIdReverse(knownGames: IGameStored[], input: string): string;
 
-// @public
+// @public @deprecated
 function copyAsync(src: string, dest: string, options?: fs_2.CopyOptions & {
     noSelfCopy?: boolean;
     showDialogCallback?: () => boolean;
@@ -879,7 +886,7 @@ const _default: GitHub;
 // @public
 function delay(timeoutMS: number): Bluebird<void>;
 
-// @public
+// @public @deprecated
 function deleteOrNop<T>(state: T, path: Array<string | number>): T;
 
 // @public (undocumented)
@@ -977,7 +984,7 @@ const downloadsForGame: (state: IState, gameId: string) => {
 // Warning: (ae-forgotten-export) The symbol "IDraggableListProps" needs to be exported by the entry point api.d.ts
 //
 // @public (undocumented)
-export function DraggableList(props: IDraggableListProps): JSX.Element;
+export function DraggableList(props: IDraggableListProps): React_2.JSX.Element;
 
 // Warning: (ae-forgotten-export) The symbol "IProps" needs to be exported by the entry point api.d.ts
 //
@@ -999,7 +1006,7 @@ export class Dropdown extends React_2.Component<IProps, {
 // Warning: (ae-forgotten-export) The symbol "IProps_2" needs to be exported by the entry point api.d.ts
 //
 // @public
-export function DropdownButton(props: IProps_2): JSX.Element;
+export function DropdownButton(props: IProps_2): React_2.JSX.Element;
 
 // Warning: (ae-forgotten-export) The symbol "IBaseProps_5" needs to be exported by the entry point api.d.ts
 //
@@ -1040,20 +1047,50 @@ const endDialog: ComplexActionCreator1<string, {
 instanceId: string;
 }, {}>;
 
-// @public (undocumented)
+// @public @deprecated (undocumented)
 function ensureDirAsync(dirPath: string, onDirCreatedCB?: (created: string) => PromiseLike<void>): Promise_2<void>;
 
-// @public (undocumented)
+// @public @deprecated (undocumented)
 function ensureDirSync(dirPath: string): void;
 
 // @public (undocumented)
 function ensureDirWritableAsync(dirPath: string, confirm?: () => PromiseLike<void>): Promise_2<void>;
 
-// @public (undocumented)
+// @public @deprecated (undocumented)
 function ensureFileAsync(filePath: string): Promise_2<void>;
 
 // @public (undocumented)
 export const ErrorBoundary: any;
+
+// @public
+interface ExtensionInfo {
+    // (undocumented)
+    author: string;
+    // (undocumented)
+    bundled?: boolean;
+    // (undocumented)
+    description: string;
+    // (undocumented)
+    fileId?: number;
+    // (undocumented)
+    id?: string;
+    // (undocumented)
+    issueTrackerURL?: string;
+    // (undocumented)
+    modId?: number;
+    // (undocumented)
+    name: string;
+    // (undocumented)
+    namespace?: string;
+    // (undocumented)
+    path?: string;
+    // Warning: (ae-forgotten-export) The symbol "ExtensionType" needs to be exported by the entry point api.d.ts
+    //
+    // (undocumented)
+    type?: ExtensionType;
+    // (undocumented)
+    version: string;
+}
 
 // @public (undocumented)
 type ExtensionLoadFailureDependency = {
@@ -1123,11 +1160,11 @@ function fireNotificationAction(notiId: string, notiProcess: string, action: num
 // @public (undocumented)
 export class FlexLayout extends React_2.PureComponent<IProps_3, {}> {
     // (undocumented)
-    static Fixed: (props: React_2.HTMLAttributes<HTMLDivElement>) => JSX.Element;
+    static Fixed: (props: React_2.HTMLAttributes<HTMLDivElement>) => React_2.JSX.Element;
     // Warning: (ae-forgotten-export) The symbol "IFlexProps" needs to be exported by the entry point api.d.ts
     //
     // (undocumented)
-    static Flex: (props: IFlexProps & React_2.HTMLAttributes<HTMLDivElement>) => JSX.Element;
+    static Flex: (props: IFlexProps & React_2.HTMLAttributes<HTMLDivElement>) => React_2.JSX.Element;
     // (undocumented)
     render(): JSX.Element;
 }
@@ -1149,7 +1186,7 @@ const forgetMod: reduxAct.ComplexActionCreator2<string, string, {
 // @public (undocumented)
 export class FormCheckboxItem extends React_2.Component<IFormItemProps, {}> {
     // (undocumented)
-    render(): JSX.Element;
+    render(): React_2.JSX.Element;
 }
 
 // Warning: (ae-forgotten-export) The symbol "IFormFeedbackProps" needs to be exported by the entry point api.d.ts
@@ -1182,7 +1219,7 @@ export class FormPathItem extends ComponentEx<IFormPathProps, {}> {
 // @public (undocumented)
 export class FormTextItem extends React_2.Component<IFormItemProps, {}> {
     // (undocumented)
-    render(): JSX.Element;
+    render(): React_2.JSX.Element;
 }
 
 declare namespace fs {
@@ -1561,10 +1598,10 @@ function getNormalizeFunc(testPath: string, parameters?: INormalizeParameters): 
 // @public (undocumented)
 function getReduxLog(): Promise<ILog[]>;
 
-// @public
+// @public @deprecated
 function getSafe<T>(state: any, path: Array<string | number | undefined>, fallback: T): T;
 
-// @public
+// @public @deprecated
 function getSafeCI<T>(state: any, path: Array<string | number>, fallback: T): T;
 
 // @public (undocumented)
@@ -1602,8 +1639,8 @@ enum HealthCheckCategory {
 // @public (undocumented)
 type HealthCheckFixFunction = (api: IExtensionApi) => Promise<void>;
 
-// @public (undocumented)
-type HealthCheckFunction = (api: IExtensionApi) => Promise<IHealthCheckResult>;
+// @public
+type HealthCheckFunction = (api: IExtensionApi, signal?: AbortSignal) => Promise<IHealthCheckResult>;
 
 // @public (undocumented)
 enum HealthCheckSeverity {
@@ -1791,8 +1828,6 @@ interface IAvailableExtension extends IExtensionDownloadInfo {
     tags: string[];
     // (undocumented)
     timestamp: number;
-    // Warning: (ae-forgotten-export) The symbol "ExtensionType" needs to be exported by the entry point api.d.ts
-    //
     // (undocumented)
     type?: ExtensionType;
     // (undocumented)
@@ -1906,7 +1941,7 @@ export const Icon: FC<IIconProps>;
 // @public
 class Icon_2 extends React_2.Component<IconProps, {}> {
     // (undocumented)
-    render(): JSX.Element;
+    render(): React_2.JSX.Element;
 }
 
 // Warning: (ae-forgotten-export) The symbol "ExportType_4" needs to be exported by the entry point api.d.ts
@@ -1917,7 +1952,7 @@ export const IconBar: React_2.ComponentClass<ExportType_4>;
 // @public (undocumented)
 class IconButton extends React_2.Component<IconButtonProps, {}> {
     // (undocumented)
-    render(): JSX.Element;
+    render(): React_2.JSX.Element;
 }
 
 // @public (undocumented)
@@ -2306,33 +2341,8 @@ interface IExecInfo {
     execPath: string;
 }
 
-// @public
-interface IExtension {
-    // (undocumented)
-    author: string;
-    // (undocumented)
-    bundled?: boolean;
-    // (undocumented)
-    description: string;
-    // (undocumented)
-    fileId?: number;
-    // (undocumented)
-    id?: string;
-    // (undocumented)
-    issueTrackerURL?: string;
-    // (undocumented)
-    modId?: number;
-    // (undocumented)
-    name: string;
-    // (undocumented)
-    namespace?: string;
-    // (undocumented)
-    path?: string;
-    // (undocumented)
-    type?: ExtensionType;
-    // (undocumented)
-    version: string;
-}
+// @public @deprecated (undocumented)
+type IExtension = ExtensionInfo;
 
 // @public
 interface IExtensionApi {
@@ -2488,12 +2498,20 @@ interface IExtensionOptional {
 
 // @public (undocumented)
 interface IExtensionState {
+    author: string;
+    bundled?: boolean;
+    description: string;
     // (undocumented)
     enabled: boolean | "failed";
     // (undocumented)
     endorsed: string;
+    fileId?: number;
+    modId?: number;
+    name: string;
+    path: string;
     // (undocumented)
     remove: boolean;
+    type?: ExtensionType;
     // (undocumented)
     version: string;
 }
@@ -2698,6 +2716,7 @@ interface IHealthCheck {
     extensionName?: string;
     // (undocumented)
     fix?: HealthCheckFixFunction;
+    gameId?: string;
     // (undocumented)
     id: string;
     // (undocumented)
@@ -3758,7 +3777,7 @@ clearCache: () => void;
 // @public
 const isCollectionPhaseComplete: (state: IState, phase: number) => boolean;
 
-// @public (undocumented)
+// @public @deprecated (undocumented)
 function isDirectoryAsync(dirPath: string): Promise_2<boolean>;
 
 // @public
@@ -4572,12 +4591,12 @@ const lastActiveProfiles: (state: IState) => {
 };
 
 // @public (undocumented)
-function LazyComponent<T>(load: () => any): (props: any) => JSX.Element;
+function LazyComponent<T>(load: () => any): (props: any) => React_2.JSX.Element;
 
 // @public (undocumented)
 function lazyRequire<T>(delayed: () => T, exportId?: string): T;
 
-// @public (undocumented)
+// @public @deprecated (undocumented)
 function linkAsync(src: string, dest: string, options?: ILinkFileOptions): Promise_2<void>;
 
 // Warning: (ae-forgotten-export) The symbol "ICategoryDictionary" needs to be exported by the entry point api.d.ts
@@ -4594,7 +4613,7 @@ type LoadOrder = ILoadOrderEntry_2[];
 // Warning: (ae-forgotten-export) The symbol "IProps_5" needs to be exported by the entry point api.d.ts
 //
 // @public (undocumented)
-export function LoadOrderIndexInput(props: IProps_5): JSX.Element;
+export function LoadOrderIndexInput(props: IProps_5): React_3.JSX.Element;
 
 // @public
 function local<T>(id: string, init: T): T;
@@ -4667,7 +4686,7 @@ function makeUnique<T>(input: T[]): T[];
 // @public
 function makeUniqueByKey<T>(input: T[], key: (item: T) => string): T[];
 
-// @public
+// @public @deprecated
 function merge<T extends object>(state: T, path: Array<string | number>, value: any): T;
 
 // @public (undocumented)
@@ -4765,13 +4784,13 @@ const moveAsync: (src: string, dest: string, options?: fs_2.MoveOptions) => Prom
 // @public
 function moveRenameAsync(src: string, dest: string): Promise_2<string>;
 
-// @public (undocumented)
+// @public @deprecated (undocumented)
 function mutateSafe<T>(state: T, path: Array<string | number>, value: any): void;
 
 // @public (undocumented)
 class NavItem_2 extends React_2.Component<NavItemProps, {}> {
     // (undocumented)
-    render(): JSX.Element;
+    render(): React_2.JSX.Element;
 }
 
 // @public (undocumented)
@@ -4897,7 +4916,7 @@ export class Overlay extends React_2.Component<IProps_6, {
 }> {
     constructor(props: any);
     // (undocumented)
-    render(): JSX.Element;
+    render(): React_2.JSX.Element;
 }
 
 // @public (undocumented)
@@ -4925,7 +4944,7 @@ export class OverlayTrigger extends React_2.Component<IProps_7, {
     // (undocumented)
     componentDidMount(): void;
     // (undocumented)
-    render(): JSX.Element;
+    render(): React_2.JSX.Element;
 }
 
 // @public (undocumented)
@@ -4941,7 +4960,7 @@ paused: boolean;
 type PayloadT<Type> = Type extends ComplexActionCreator<infer X> ? X : never;
 
 // @public (undocumented)
-type PerModCheckFunction = (api: IExtensionApi, mod: IModCheckContext) => Promise<IHealthCheckResult>;
+type PerModCheckFunction = (api: IExtensionApi, mod: IModCheckContext, signal?: AbortSignal) => Promise<IHealthCheckResult>;
 
 // @public
 type PersistingType = "global" | "game" | "profile";
@@ -4967,7 +4986,7 @@ export class PortalMenu extends React_2.Component<IPortalMenuProps, {
     // (undocumented)
     static contextTypes: React_2.ValidationMap<any>;
     // (undocumented)
-    render(): JSX.Element;
+    render(): React_2.JSX.Element;
 }
 
 // @public (undocumented)
@@ -5031,7 +5050,7 @@ export class PureComponentEx<P, S extends object> extends React_2.PureComponent<
     nextState: S;
 }
 
-// @public
+// @public @deprecated
 function pushSafe<T>(state: T, path: Array<string | number>, value: any): T;
 
 // @public (undocumented)
@@ -5069,7 +5088,7 @@ const readFileAsync: (...args: any[]) => Promise_2<any>;
 // @public
 function readFileBOM(filePath: string, fallbackEncoding: string): Promise<string>;
 
-// @public (undocumented)
+// @public @deprecated (undocumented)
 function readlinkAsync(linkPath: string): Promise_2<string>;
 
 // @public (undocumented)
@@ -5117,13 +5136,13 @@ type RegisterSettings = (title: string, element: React_2.ComponentClass<any> | R
 // @public (undocumented)
 type RegisterToDo = (id: string, type: ToDoType, props: (state: any) => any, icon: ((props: any) => JSX.Element) | string, text: ((t: TFunction, props: any) => JSX.Element) | string, action: (props: any) => void, condition: (props: any) => boolean, value: ((t: TFunction, props: any) => JSX.Element) | string, priority: number) => void;
 
-// @public (undocumented)
+// @public @deprecated (undocumented)
 function rehydrate<T extends object>(state: T, inbound: any, path: string[], replace: boolean, defaults: any): T;
 
 // @public (undocumented)
 function relativeTime(date: Date, t: TFunction): string;
 
-// @public (undocumented)
+// @public @deprecated (undocumented)
 function removeAsync(remPath: string, options?: IRemoveFileOptions): Promise_2<void>;
 
 // @public (undocumented)
@@ -5167,13 +5186,13 @@ const removeProfile: reduxAct.ComplexActionCreator1<unknown, unknown, {}>;
 // @public (undocumented)
 function removeSync(dirPath: string): void;
 
-// @public
+// @public @deprecated
 function removeValue<T>(state: T, path: Array<string | number>, value: any): T;
 
-// @public
+// @public @deprecated
 function removeValueIf<T extends object>(state: T, path: Array<string | number>, predicate: (element: any) => boolean): T;
 
-// @public (undocumented)
+// @public @deprecated (undocumented)
 function renameAsync(sourcePath: string, destinationPath: string): Promise_2<void>;
 
 // @public (undocumented)
@@ -5440,7 +5459,7 @@ const setCustomTitlebar: reduxAct.ComplexActionCreator1<any, any, {}>;
 // @public
 function setdefault<T, K extends keyof T>(obj: T, key: K, def: T[K]): T[K];
 
-// @public (undocumented)
+// @public @deprecated (undocumented)
 function setDefaultArray<T>(state: T, path: Array<string | number>, fallback: any[]): T;
 
 // @public (undocumented)
@@ -5741,7 +5760,7 @@ page: string;
 secondary: boolean;
 }, {}>;
 
-// @public
+// @public @deprecated
 function setOrNop<T>(state: T, path: string[], value: any): T;
 
 // @public
@@ -5752,8 +5771,8 @@ time: number;
 }, {}>;
 
 // @public (undocumented)
-const setPickerLayout: ComplexActionCreator1<"list" | "small" | "large", {
-layout: "list" | "small" | "large";
+const setPickerLayout: ComplexActionCreator1<"small" | "list" | "large", {
+layout: "small" | "list" | "large";
 }, {}>;
 
 // @public (undocumented)
@@ -5784,7 +5803,7 @@ percent: number;
 // @public (undocumented)
 const setRelativeTimes: reduxAct.ComplexActionCreator1<boolean, boolean, {}>;
 
-// @public
+// @public @deprecated
 function setSafe<T extends object>(state: T, path: Array<string | number>, value: any): T;
 
 // @public (undocumented)
@@ -5951,7 +5970,7 @@ type SortType = "ascending" | "descending";
 // Warning: (ae-forgotten-export) The symbol "ISpinnerProps" needs to be exported by the entry point api.d.ts
 //
 // @public (undocumented)
-export function Spinner(props: ISpinnerProps): JSX.Element;
+export function Spinner(props: ISpinnerProps): React_2.JSX.Element;
 
 // @public (undocumented)
 const startActivity: ComplexActionCreator2<string, string, {
@@ -6154,7 +6173,7 @@ interface ThunkStore<S> extends Redux.Store<S> {
 // Warning: (ae-forgotten-export) The symbol "ITimerProps" needs to be exported by the entry point api.d.ts
 //
 // @public (undocumented)
-export function Timer(props: ITimerProps): JSX.Element;
+export function Timer(props: ITimerProps): React_2.JSX.Element;
 
 // @public (undocumented)
 function toBlue<T, ArgsT extends any[]>(func: (...args: ArgsT) => Promise<T>): (...args: ArgsT) => Bluebird<T>;
@@ -6173,7 +6192,7 @@ export class Toggle extends React_2.PureComponent<IProps_10, {}> {
 // @public (undocumented)
 class ToggleButton extends React_2.Component<ToggleButtonProps, {}> {
     // (undocumented)
-    render(): JSX.Element;
+    render(): React_2.JSX.Element;
 }
 
 // @public (undocumented)
@@ -6190,7 +6209,7 @@ export class ToolbarIcon extends React_2.PureComponent<IToolbarIconProps, {}> {
 // Warning: (ae-forgotten-export) The symbol "IToolIconProps" needs to be exported by the entry point api.d.ts
 //
 // @public (undocumented)
-export const ToolIcon: (props: IToolIconProps) => JSX.Element;
+export const ToolIcon: (props: IToolIconProps) => React_2.JSX.Element;
 
 // @public
 type ToolParameterCB = (options: IRunParameters) => {
@@ -6250,6 +6269,7 @@ declare namespace types {
         CollectionModStatus,
         IAvailableExtension,
         IExtension,
+        ExtensionInfo,
         LoadOrder,
         LoadOrder as FBLOLoadOrder,
         LockedState as FBLOLockState,
@@ -6539,9 +6559,39 @@ declare namespace util {
     export {
         getText,
         Normalize,
+        calcDuration,
+        showError,
+        showActivity,
+        showInfo,
+        renderError,
+        showSuccess,
+        prettifyNodeErrorMessage,
+        IPrettifiedError,
+        IErrorRendered,
         ISteamEntry,
         CollectionInstallOutcomeProps,
         ModChangeReason,
+        request,
+        rawRequest,
+        upload,
+        jsonRequest,
+        IRequestOptions,
+        Method,
+        addUniqueSafe,
+        changeOrNop,
+        currentGame_2 as currentGame,
+        deleteOrNop,
+        getSafe,
+        getSafeCI,
+        merge,
+        mutateSafe,
+        pushSafe,
+        rehydrate,
+        removeValue,
+        removeValueIf,
+        setDefaultArray,
+        setOrNop,
+        setSafe,
         Archive,
         ArgumentInvalid,
         batchDispatch,
@@ -6670,37 +6720,7 @@ declare namespace util {
         CollectionsDraftedEvent,
         CollectionsDraftUploadedEvent,
         CollectionsDraftUpdateUploadedEvent,
-        TextGroup,
-        calcDuration,
-        showSuccess,
-        showActivity,
-        showInfo,
-        showError,
-        prettifyNodeErrorMessage,
-        renderError,
-        IPrettifiedError,
-        IErrorRendered,
-        rawRequest,
-        jsonRequest,
-        request,
-        upload,
-        IRequestOptions,
-        Method,
-        getSafe,
-        getSafeCI,
-        mutateSafe,
-        setSafe,
-        setOrNop,
-        changeOrNop,
-        deleteOrNop,
-        setDefaultArray,
-        pushSafe,
-        addUniqueSafe,
-        removeValue,
-        removeValueIf,
-        merge,
-        rehydrate,
-        currentGame_2 as currentGame
+        TextGroup
     }
 }
 export { util }
@@ -6806,11 +6826,11 @@ export class ZoomableImage extends React_2.Component<IZoomableImageProps, {
 // lib/extensions/installer_fomod_shared/types/interface.d.ts:76:5 - (ae-forgotten-export) The symbol "IChoices" needs to be exported by the entry point api.d.ts
 // lib/extensions/mod_management/selectors.d.ts:59:5 - (ae-forgotten-export) The symbol "INeedToDeployMap" needs to be exported by the entry point api.d.ts
 // lib/types/IDialog.d.ts:84:9 - (ae-forgotten-export) The symbol "IBBCodeContext" needs to be exported by the entry point api.d.ts
-// lib/types/IState.d.ts:172:9 - (ae-forgotten-export) The symbol "DownloadCheckpoint" needs to be exported by the entry point api.d.ts
-// lib/types/IState.d.ts:387:9 - (ae-forgotten-export) The symbol "IHistoryState" needs to be exported by the entry point api.d.ts
-// lib/types/IState.d.ts:389:9 - (ae-forgotten-export) The symbol "IHealthCheckSessionState" needs to be exported by the entry point api.d.ts
-// lib/types/IState.d.ts:422:9 - (ae-forgotten-export) The symbol "IHistoryPersistent" needs to be exported by the entry point api.d.ts
-// lib/types/IState.d.ts:423:9 - (ae-forgotten-export) The symbol "IHealthCheckPersistentState" needs to be exported by the entry point api.d.ts
+// lib/types/IState.d.ts:188:9 - (ae-forgotten-export) The symbol "DownloadCheckpoint" needs to be exported by the entry point api.d.ts
+// lib/types/IState.d.ts:403:9 - (ae-forgotten-export) The symbol "IHistoryState" needs to be exported by the entry point api.d.ts
+// lib/types/IState.d.ts:405:9 - (ae-forgotten-export) The symbol "IHealthCheckSessionState" needs to be exported by the entry point api.d.ts
+// lib/types/IState.d.ts:438:9 - (ae-forgotten-export) The symbol "IHistoryPersistent" needs to be exported by the entry point api.d.ts
+// lib/types/IState.d.ts:439:9 - (ae-forgotten-export) The symbol "IHealthCheckPersistentState" needs to be exported by the entry point api.d.ts
 // lib/views/MainPage.d.ts:12:5 - (ae-forgotten-export) The symbol "MainPageBody" needs to be exported by the entry point api.d.ts
 // lib/views/MainPage.d.ts:13:5 - (ae-forgotten-export) The symbol "MainPageHeader" needs to be exported by the entry point api.d.ts
 

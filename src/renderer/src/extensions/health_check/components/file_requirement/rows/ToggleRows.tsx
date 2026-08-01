@@ -1,10 +1,13 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 
-import { installedToFileData } from "@/extensions/health_check/utils/fileRequirements/cardHelpers";
+import {
+  type IFileActionContext,
+  installedToFileData,
+} from "@/extensions/health_check/utils/fileRequirements/cardHelpers";
 import { viewInLoadout } from "@/extensions/health_check/utils/fileRequirements/fileRequirementActions";
 import type { IFileRequirement } from "@/extensions/health_check/utils/fileRequirements/mapRequirementsReport";
-import type { IExtensionApi } from "@/types/IExtensionContext";
+import { requirementStateFor } from "@/extensions/health_check/utils/shared/tracking";
 import { Button } from "@/ui/components/button/Button";
 import { Typography } from "@/ui/components/typography/Typography";
 import { nxmModOutline } from "@/ui/icon-paths";
@@ -13,13 +16,18 @@ import { EnableCard } from "../cards/EnableCard";
 import { FileRequirement } from "../FileRequirement";
 
 export const ToggleRows = ({
-  api,
+  ctx,
   requirement,
 }: {
-  api: IExtensionApi;
+  ctx: IFileActionContext;
   requirement: Extract<IFileRequirement, { kind: "wrong-version-enabled" }>;
 }) => {
   const { t } = useTranslation("health_check");
+
+  const handleViewInMods = () => {
+    ctx.onViewInMods(requirement.enabledFile);
+    viewInLoadout(ctx.api, requirement.enabledFile);
+  };
 
   return (
     <>
@@ -29,9 +37,10 @@ export const ToggleRows = ({
         </Typography>
 
         <EnableCard
-          api={api}
           correctFile={requirement.correctFile}
+          ctx={ctx}
           enabledFile={requirement.enabledFile}
+          resolution={{ requirementState: requirementStateFor(requirement) }}
         />
       </div>
 
@@ -47,7 +56,7 @@ export const ToggleRows = ({
               brand="neutral"
               leftIconPath={nxmModOutline}
               size="sm"
-              onClick={() => viewInLoadout(api, requirement.enabledFile)}
+              onClick={handleViewInMods}
             >
               {t("detail::item::view_in_mods")}
             </Button>
