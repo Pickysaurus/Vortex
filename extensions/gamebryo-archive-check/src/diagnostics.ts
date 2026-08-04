@@ -205,7 +205,9 @@ async function check(api: types.IExtensionApi): Promise<types.IHealthCheckResult
     if (!issues.length) return passed("No incompatible archives found", startedAt);
 
     const details = warningDetails(api, issues, gameData);
-    return warning("Incompatible mod archive(s)", details, startedAt);
+    const healthCheckWarning = warning("Incompatible mod archive(s)", details, startedAt);
+    console.log("Health check completed with warnings", healthCheckWarning);
+    return healthCheckWarning;
   } catch (e: unknown) {
     return warning(`Mod Archive checking failed for ${activeGameId}`, String(e), startedAt);
   }
