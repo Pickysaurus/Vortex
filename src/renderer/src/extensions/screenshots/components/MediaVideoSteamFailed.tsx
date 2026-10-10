@@ -13,13 +13,13 @@ export default function MediaVideoSteamFailed() {
   const { t } = useTranslation("media_page");
   const gameId = useSelector(activeGameId);
   const game = useSelector((state: IState) => gameById(state, gameId));
-  const steamAppId = (game.details as { steamAppId?: string | undefined })?.steamAppId;
+  const steamAppId = (game?.details as { steamAppId?: string | undefined })?.steamAppId;
   const steamUri = steamAppId
     ? `steam://open/screenshots/${steamAppId}`
     : "steam://open/screenshots/";
 
   return (
-    <div className="flex min-h-130 w-full flex-col items-center justify-center gap-2 bg-surface-mid">
+    <div className="flex aspect-video w-full grow flex-col items-center justify-center gap-2 bg-surface-mid">
       <div className="flex gap-2">
         <Icon className="nxm-alert-icon inline" path={mdiAlertOutline} size="sm" />
 

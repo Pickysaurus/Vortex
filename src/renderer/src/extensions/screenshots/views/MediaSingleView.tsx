@@ -1,6 +1,6 @@
 import { pathToFileURL } from "url";
 
-import { mdiArrowLeft } from "@mdi/js";
+import { mdiArrowLeft, mdiChevronLeft, mdiChevronRight } from "@mdi/js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useDispatch } from "react-redux";
@@ -159,8 +159,8 @@ export default function MediaSingleView({
         </Button>
       </PageHeader>
 
-      <div className="mx-auto flex grow gap-6 p-6">
-        <div>
+      <div className="mx-auto grid w-full max-w-8xl grow grid-cols-[minmax(0,1fr)_264px] gap-6 p-6">
+        <div className="w-full max-w-8xl">
           <div
             className={`relative w-full ${isAddingTag ? "cursor-crosshair" : ""}`}
             ref={containerRef}
@@ -173,7 +173,7 @@ export default function MediaSingleView({
             {entry.type === "video" && !entry.path.endsWith(".mpd") && (
               <video
                 controls
-                className="min-h-130 w-full"
+                className="aspect-video min-h-130 w-full"
                 ref={playerRef}
                 src={mediaSrc}
                 onError={() =>
@@ -198,28 +198,42 @@ export default function MediaSingleView({
               />
             ))}
 
-            {/* Floating search at cursor when a pending coord is set */}
-            {/* {isAddingTag && pendingCoords && (
-              <FloatingSearchBar
-                visible
-                api={api}
-                containerRef={containerRef}
-                leftPct={pendingCoords.x}
-                topPct={pendingCoords.y}
-                onClose={() => {
-                  setIsAddingTag(false);
-                  setPendingCoords(null);
-                }}
-                onSelect={onSelectTag}
-              />
-            )} */}
-
+            {/* Marker for currently adding tag */}
             {isAddingTag && pendingCoords && (
               <ModTagIndicator
                 gameId={gameId}
                 mediaId={entry.id}
                 x={pendingCoords.x}
                 y={pendingCoords.y}
+              />
+            )}
+
+            {/* Prev/Next buttons */}
+            {!isAddingTag && (
+              <Button
+                appearance="scrim"
+                aria-label="Previous"
+                brand="neutral"
+                className="absolute top-1/2 left-4 z-10 -translate-y-1/2 rounded-full"
+                disabled={!prev}
+                leftIconPath={mdiChevronLeft}
+                role="button"
+                title="Previous"
+                onClick={() => prev()}
+              />
+            )}
+
+            {!isAddingTag && (
+              <Button
+                appearance="scrim"
+                aria-label="Next"
+                brand="neutral"
+                className="absolute top-1/2 right-4 z-10 -translate-y-1/2 rounded-full"
+                disabled={!next}
+                leftIconPath={mdiChevronRight}
+                role="button"
+                title="Next"
+                onClick={() => next()}
               />
             )}
           </div>

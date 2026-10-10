@@ -74,13 +74,14 @@ export default function MediaPage({ active, api }: IMediaPageProps) {
   };
 
   if (selected) {
+    const idx = selected ? items.indexOf(selected) : -1;
     return (
       <MediaSingleView
         active={active}
         api={api}
         entry={selected}
-        next={() => swapImage("next")}
-        prev={() => swapImage("prev")}
+        next={idx < items.length - 1 ? () => swapImage("next") : undefined}
+        prev={idx > 0 ? () => swapImage("prev") : undefined}
         source={allSources[selected.sourceId]}
         onBack={() => setSelected(null)}
       />

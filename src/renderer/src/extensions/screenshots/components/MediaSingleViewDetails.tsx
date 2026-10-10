@@ -164,7 +164,9 @@ export default function MediaViewSingleDetails({
               leftIconPath={mdiImageOutline}
               onClick={() => window.api.shell.openFile(entry.path)}
             >
-              {t("single::actions::open")}
+              {entry.type === "image"
+                ? t("single::actions::open_image")
+                : t("single::actions::open_video")}
             </Button>
 
             <Button
