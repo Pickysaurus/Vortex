@@ -22,7 +22,6 @@
   },
   "single": {
     "actions": {
-      "upload": "Upload",
       "continue": "Continue",
       "cancel": "Cancel",
       "add_mod": "Add mod tag",
@@ -49,7 +48,6 @@
     },
     "mods_used": "Mods used",
     "mods_used_desc": "Tag the mods visible in this screenshot.",
-    "details": "Details",
     "no_tags": "No mods tagged yet",
     "video_failed": "Video failed to load",
     "start_tagging": "Click anywhere on the image to tag a mod.",
@@ -77,7 +75,9 @@
       "video_support": "Video Support",
       "video_support_desc": "Includes MP4s and Steam clips in the media section.",
       "video_support_warn": "It is not currently possible to play Steam clips, and videos will have generic thumbnails unless FFmpeg is installed.",
-      "get_ffmpeg": "Get FFmpeg."
+      "get_ffmpeg": "Get FFmpeg.",
+      "external_tags": "Uninstalled Mod Tags",
+      "external_tags_desc": "Allows mods that aren't currently installed to be tagged within media items. Requires selecting the file/version for each mod."
     },
     "add_modal": {
       "header_add": "Add Custom Media Source",

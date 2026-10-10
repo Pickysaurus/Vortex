@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSelector } from "react-redux";
 
 import { getGame } from "@/extensions/gamemode_management/util/getGame";
 import { nexusGameId } from "@/extensions/nexus_integration/util/convertGameId";
@@ -8,6 +9,7 @@ import { Typography } from "@/ui/components/typography/Typography";
 
 import useLocalModsSearch from "../hooks/LocalModsSearch";
 import useNexusModsSearch from "../hooks/NexusModsSearch";
+import { gameMediaFlags } from "../selectors";
 import { ComboboxGroup, ComboboxInput, ComboboxOption, ComboboxOptions } from "./combobox/Combobox";
 import { ComboboxField } from "./combobox/ComboboxField";
 import ModComboboxSkeletonTile from "./ModComboboxSkeletonTile";
@@ -47,11 +49,17 @@ export default function ModCombobox({
   const { t } = useTranslation("media_page");
   const [query, setQuery] = useState("");
 
+  const useExternal = useSelector(gameMediaFlags).externalModTags ?? false;
+
   const { results: localResults } = useLocalModsSearch(query);
-  const { results: nexusResults, isLoading } = useNexusModsSearch(query, api, {
-    tryToUseLogin: true,
-    debounceDelayMs: 500,
-  });
+  const { results: nexusResults, isLoading } = useNexusModsSearch(
+    useExternal ? query : undefined,
+    api,
+    {
+      tryToUseLogin: true,
+      debounceDelayMs: 500,
+    },
+  );
 
   const installed: IModOption[] = localResults.map((mod) => ({
     key: `installed:${mod.id}`,

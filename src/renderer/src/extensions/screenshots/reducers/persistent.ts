@@ -14,6 +14,7 @@ export interface IGameMediaPersistentState {
   disabledSources: Record<string, string[]>;
   flags: {
     showVideos?: boolean;
+    externalModTags?: boolean;
     [key: string]: boolean;
   };
   uploadedItems: {
@@ -129,6 +130,7 @@ export const persistentReducer: IReducerSpec<IGameMediaPersistentState> = {
     disabledSources: {},
     flags: {
       showVideos: false,
+      externalModTags: false,
     },
     uploadedItems: {},
   },

@@ -1,4 +1,3 @@
-/* eslint-disable @eslint-react/set-state-in-effect */
 import { useEffect, useRef, useState } from "react";
 
 import { getAccessToken } from "@/extensions/nexus_integration/util/oauthSession";
@@ -28,7 +27,9 @@ export default function useNexusModsVersions(
 
   useEffect(() => {
     const controller = new AbortController();
+    // eslint-disable-next-line @eslint-react/set-state-in-effect
     setIsLoading(true);
+    // eslint-disable-next-line @eslint-react/set-state-in-effect
     setIsError(false);
     void (async () => {
       try {
@@ -54,7 +55,9 @@ export default function useNexusModsVersions(
   useEffect(() => {
     if (!selectedFile) return;
     const controller = new AbortController();
+    // eslint-disable-next-line @eslint-react/set-state-in-effect
     setIsLoading(true);
+    // eslint-disable-next-line @eslint-react/set-state-in-effect
     setIsError(false);
     void (async () => {
       try {
@@ -63,7 +66,7 @@ export default function useNexusModsVersions(
         if (!controller.signal.aborted) {
           setVersions(v);
           setSelectedVersion(v[0]);
-          onSelectRef.current(v[0]);
+          onSelectRef.current?.(v[0]);
         }
       } catch (e) {
         if (!controller.signal.aborted) {

@@ -189,7 +189,7 @@ const SettingsMedia: React.FC<React.PropsWithChildren<ISettingsMediaProps>> = ({
         <div className="flex w-max items-center gap-3">
           <Switch
             checked={flags.showVideos}
-            data-testid={`media-source-toggle-vidoes`}
+            data-testid={`media-source-toggle-videos`}
             onChange={() => onChangeFlag("showVideos", flags.showVideos ? false : true)}
           />
 
@@ -212,6 +212,24 @@ const SettingsMedia: React.FC<React.PropsWithChildren<ISettingsMediaProps>> = ({
               {t("settings::exp::video_support_warn")}
 
               <a href="https://ffmpeg.org/">{t("settings::exp::get_ffmpeg")}</a>
+            </Typography>
+          </div>
+        </div>
+
+        <div className="flex w-max items-center gap-3">
+          <Switch
+            checked={flags.externalModTags}
+            data-testid={`media-source-toggle-external-tags`}
+            onChange={() => onChangeFlag("externalModTags", flags.externalModTags ? false : true)}
+          />
+
+          <div className="min-w-sm grow">
+            <Typography as="span" typographyType="body-sm">
+              {t("settings::exp::external_tags")}
+            </Typography>
+
+            <Typography appearance="subdued" as="div" typographyType="body-sm">
+              {t("settings::exp::external_tags_desc")}
             </Typography>
           </div>
         </div>

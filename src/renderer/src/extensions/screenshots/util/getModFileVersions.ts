@@ -49,7 +49,7 @@ interface V3APIError {
 
 export async function getModFileVersions(
   fileUid: string,
-  token: string,
+  token: string | undefined,
   signal: AbortController["signal"],
 ): Promise<IModFileVersion[]> {
   const headers: Record<string, string> = {
