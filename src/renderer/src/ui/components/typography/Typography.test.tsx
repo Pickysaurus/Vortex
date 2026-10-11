@@ -1,14 +1,10 @@
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import React from "react";
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 
 import { Typography } from "./Typography";
 
 // --- Helpers ---
-
-afterEach(() => {
-  cleanup();
-});
 
 const get = (text = "text") => screen.getByText(text);
 
@@ -96,6 +92,22 @@ describe("Typography", () => {
         </Typography>,
       );
       expect(get()).toHaveClass("text-danger-strong");
+    });
+  });
+
+  describe('brand="neutral-on-scrim"', () => {
+    it("uses the fixed on-scrim ramp", () => {
+      render(
+        <Typography appearance="moderate" brand="neutral-on-scrim">
+          text
+        </Typography>,
+      );
+      expect(get()).toHaveClass("text-on-scrim-moderate");
+    });
+
+    it("defaults to the strong on-scrim colour", () => {
+      render(<Typography brand="neutral-on-scrim">text</Typography>);
+      expect(get()).toHaveClass("text-on-scrim-strong");
     });
   });
 

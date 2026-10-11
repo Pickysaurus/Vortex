@@ -4,6 +4,8 @@ import { setupFakeGame, GAME_CONFIGS } from "../fixtures/game-setup/fake-game";
 import { test } from "../fixtures/vortex-app";
 import { GamesPage } from "../selectors/games";
 import { NavBar } from "../selectors/navbar";
+import { describeScreen } from "./diagnostics";
+import { stubOpenDialog } from "./dialogs";
 import { Timeouts } from "./timeouts";
 
 // VORTEX_E2E=1 disables automatic discovery, so all games go through the
@@ -27,27 +29,42 @@ export async function manageGame(
     const navbar = new NavBar(vortexWindow);
     const gamesPage = new GamesPage(vortexWindow);
 
-    await expect(navbar.gamesLink).toBeVisible();
+    // First interaction after a cold app launch — allow the nav to finish
+    // mounting rather than racing the default 5s UI budget.
+    await expect(navbar.gamesLink).toBeVisible({ timeout: Timeouts.NETWORK });
     await navbar.gamesLink.click();
 
-    await electronApp.evaluate(({ dialog }, gamePath) => {
-      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [gamePath] });
-    }, fakeGame.gamePath);
+    await stubOpenDialog(electronApp, fakeGame.gamePath);
 
-    const row = gamesPage.gameRow(gameName);
-    await expect(row).toBeVisible({ timeout: Timeouts.NETWORK });
-    await row.scrollIntoViewIfNeeded();
-    await row.hover();
+    // The supported games list is windowed, so the target game's tile isn't in
+    // the DOM until the list is filtered down to it. Search by name first.
+    await expect(gamesPage.searchInput).toBeVisible();
+    await gamesPage.searchInput.fill(gameName);
 
-    const manageButton = gamesPage.manageButton(gameName);
-    await expect(manageButton).toBeVisible();
-    await manageButton.click();
+    const tile = gamesPage.gameTileInSection(gamesPage.supportedSection, gameName);
+    await expect(tile).toBeVisible({ timeout: Timeouts.NETWORK });
+    await tile.scrollIntoViewIfNeeded();
+    await tile.hover();
 
-    const continueButton = vortexWindow.getByRole("button", { name: "Continue" });
-    await expect(continueButton).toBeVisible();
-    await continueButton.click();
+    const manualAddButton = gamesPage.manualAddButton(gameName);
+    await expect(manualAddButton).toBeVisible();
+    await manualAddButton.click();
 
-    await expect(navbar.modsLink).toBeVisible({ timeout: Timeouts.NETWORK });
+    await expect(gamesPage.notDiscoveredDialog).toBeVisible();
+    await expect(gamesPage.notDiscoveredDialog).toContainText(
+      "hasn't been automatically discovered",
+    );
+    await gamesPage.continueButton.click();
+    await expect(gamesPage.notDiscoveredDialog).toBeHidden();
+
+    try {
+      await expect(navbar.modsLink).toBeVisible({ timeout: Timeouts.NETWORK });
+    } catch (e) {
+      throw new Error(
+        `${gameName} did not become the active game. On screen: ${await describeScreen(vortexWindow)}`,
+        { cause: e },
+      );
+    }
   });
 
   return fakeGame;

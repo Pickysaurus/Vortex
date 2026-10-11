@@ -72,6 +72,8 @@
     "node_modules/json-socket",
     "node_modules/react-select/scss",
     "node_modules/@nexusmods/fomod-installer-ipc/dist/*.exe",
+    "assets/dotnetprobe*",
+    "assets/loot/**",
     "assets/*.exe",
     "assets/css/**",
     "**/*.node",

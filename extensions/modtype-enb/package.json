@@ -4,7 +4,8 @@
   "description": "Support for ENB mods",
   "scripts": {
     "build": "node build.mjs && pnpm extractInfo",
-    "typecheck": "pnpm tsc"
+    "typecheck": "pnpm tsc",
+    "lint:strict": "pnpm exec node ../../scripts/strict-lint.mjs"
   },
   "author": "Black Tree Gaming Ltd.",
   "license": "GPL-3.0",
@@ -14,13 +15,12 @@
     "extensionName": "Mod Type: ENB"
   },
   "devDependencies": {
+    "@nexusmods/vortex-api": "workspace:*",
     "@types/bluebird": "catalog:",
-    "@types/i18next": "catalog:",
     "@types/redux": "catalog:",
     "bluebird": "catalog:",
     "copyfiles": "catalog:",
-    "redux-thunk": "catalog:",
-    "@nexusmods/vortex-api": "workspace:*"
+    "redux-thunk": "catalog:"
   },
   "nx": {
     "tags": [

@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { copyFile, rename, unlink } from "node:fs/promises";
 
 import { getErrorCode, unknownToError } from "@vortex/shared";
 import PromiseBB from "bluebird";
@@ -90,37 +91,41 @@ function writeFileAtomicImpl(
  * to destination. Since the rename is atomic and the deletion only happens after
  * a successful write this should minimize the risk of error.
  *
+ * Goes through node's fs: a file another process is holding fails back to the caller, which
+ * knows whether that is worth interrupting the user over.
+ *
  * @export
  * @param {string} srcPath
  * @param {string} destPath
  * @returns {PromiseBB<void>}
  */
 export function copyFileAtomic(srcPath: string, destPath: string): PromiseBB<void> {
-  let cleanup: () => void;
+  let cleanup: (next?: (err?: Error) => void) => void;
   let tmpPath: string;
-  return new PromiseBB((resolve, reject) => {
+  return new PromiseBB<void>((resolve, reject) => {
+    // the copy only ever works on the temp PATH; discardDescriptor makes tmp close its
+    // descriptor immediately, so no descriptor is held (or ever double-closed) here
     file(
-      { template: `${destPath}.XXXXXX.tmp` },
-      (err: any, genPath: string, fd: number, cleanupCB: () => void) => {
+      { template: `${destPath}.XXXXXX.tmp`, discardDescriptor: true },
+      (err: any, genPath: string, _fd: number, cleanupCB: () => void) => {
         if (err) {
           return reject(err);
         }
         cleanup = cleanupCB;
         tmpPath = genPath;
-        resolve(fd);
+        resolve();
       },
     );
   })
-    .then((fd: number) => fs.closeAsync(fd))
-    .then(() => fs.copyAsync(srcPath, tmpPath))
+    .then(() => copyFile(srcPath, tmpPath))
     .then(() =>
-      fs.unlinkAsync(destPath).catch((err) => {
+      unlink(destPath).catch((err) => {
         const code = getErrorCode(err);
         if (code === "EPERM") {
           // if the file is currently in use, try a second time
           // 100ms later
           log("debug", "file locked, retrying delete", destPath);
-          return PromiseBB.delay(100).then(() => fs.unlinkAsync(destPath));
+          return PromiseBB.delay(100).then(() => unlink(destPath));
         } else if (code === "ENOENT") {
           // file doesn't exist anyway? no problem
           return PromiseBB.resolve();
@@ -129,18 +134,16 @@ export function copyFileAtomic(srcPath: string, destPath: string): PromiseBB<voi
         }
       }),
     )
-    .catch((err) => (getErrorCode(err) === "ENOENT" ? PromiseBB.resolve() : PromiseBB.reject(err)))
-    .then(() => (tmpPath !== undefined ? fs.renameAsync(tmpPath, destPath) : PromiseBB.resolve()))
+    .then(() => (tmpPath !== undefined ? rename(tmpPath, destPath) : PromiseBB.resolve()))
     .catch((unknownErr) => {
       const err = unknownToError(unknownErr);
       log("info", "failed to copy", { srcPath, destPath, err: err.stack });
-      if (cleanup !== undefined) {
-        try {
-          cleanup();
-        } catch (cleanupErr) {
-          log("error", "failed to clean up temporary file", cleanupErr);
-        }
-      }
-      return PromiseBB.reject(err);
+      // with the descriptor discarded, tmp's cleanup only unlinks; awaiting it keeps
+      // the temp file from outliving the rejection
+      const removeTmp =
+        cleanup !== undefined
+          ? new PromiseBB<void>((removed) => cleanup(() => removed()))
+          : PromiseBB.resolve();
+      return removeTmp.then(() => PromiseBB.reject(err));
     });
 }

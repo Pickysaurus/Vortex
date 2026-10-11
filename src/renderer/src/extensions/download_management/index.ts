@@ -1,7 +1,13 @@
+import { spawn } from "child_process";
 import * as path from "path";
 
 import { mdiDownload } from "@mdi/js";
-import { getErrorCode, getErrorMessageOrDefault, unknownToError } from "@vortex/shared";
+import {
+  getErrorCode,
+  getErrorMessageOrDefault,
+  unknownToError,
+  VortexError,
+} from "@vortex/shared";
 import PromiseBB from "bluebird";
 import * as _ from "lodash";
 import Zip from "node-7z";
@@ -42,10 +48,12 @@ import { stateReducer } from "./reducers/state";
 import { transactionsReducer } from "./reducers/transactions";
 import type { DownloadState, IDownload } from "./types/IDownload";
 import { ensureDownloadsDirectory } from "./util/downloadDirectory";
+import { isTempDownloadName } from "./util/downloadNames";
 import extendAPI from "./util/extendApi";
 import getDownloadGames from "./util/getDownloadGames";
 import { finalizeDownload } from "./util/postprocessDownload";
 import queryInfo from "./util/queryDLInfo";
+import { refreshDownloads } from "./util/refreshDownloads";
 import setDownloadGames from "./util/setDownloadGames";
 import type { IDownloadViewProps } from "./views/DownloadView";
 import DownloadView from "./views/DownloadView";
@@ -70,37 +78,6 @@ function withAddInProgress(fileName: string, cb: () => PromiseLike<void>): Promi
   return PromiseBB.resolve(cb()).finally(() => {
     addLocalInProgress.delete(fileName);
   });
-}
-
-function refreshDownloads(
-  downloadPath: string,
-  knownDLs: string[],
-  normalize: (input: string) => string,
-  onAddDownload: (name: string) => PromiseBB<void>,
-  onRemoveDownload: (name: string) => PromiseBB<void>,
-  confirmElevation: () => PromiseBB<void>,
-) {
-  return fs
-    .ensureDirWritableAsync(downloadPath, confirmElevation)
-    .then(() => fs.readdirAsync(downloadPath))
-    .filter((filePath: string) => knownArchiveExt(filePath))
-    .filter((filePath: string) =>
-      fs
-        .statAsync(path.join(downloadPath, filePath))
-        .then((stat) => !stat.isDirectory())
-        .catch(() => false),
-    )
-    .then((downloadNames: string[]) => {
-      const dlsNormalized = downloadNames.map(normalize);
-      const addedDLs = downloadNames.filter(
-        (name: string, idx: number) => knownDLs.indexOf(dlsNormalized[idx]) === -1,
-      );
-      const removedDLs = knownDLs.filter((name: string) => dlsNormalized.indexOf(name) === -1);
-
-      return PromiseBB.map(addedDLs, onAddDownload).then(() =>
-        PromiseBB.map(removedDLs, onRemoveDownload),
-      );
-    });
 }
 
 function attributeExtractor(input: any) {
@@ -240,7 +217,10 @@ async function removeInvalidDownloads(api: IExtensionApi, gameId?: string) {
       (!downloads[dlId].localPath || downloads[dlId].received === 0 || downloads[dlId].size === 0),
   );
   const invalid = Object.keys(downloads).filter(
-    (dlId) => downloads[dlId].localPath && !path.extname(downloads[dlId].localPath),
+    (dlId) =>
+      ["finished", "failed"].includes(downloads[dlId].state) &&
+      downloads[dlId].localPath &&
+      !path.extname(downloads[dlId].localPath),
   );
   const removeSet = new Set<string>(incomplete.concat(invalid));
 
@@ -283,7 +263,7 @@ function removeInvalidFileExts(api: IExtensionApi, gameId?: string) {
     .then((files: string[]) => {
       return PromiseBB.all(
         files.map((fileName) => {
-          if (!knownArchiveExt(fileName)) {
+          if (!knownArchiveExt(fileName) && !isTempDownloadName(fileName)) {
             return fs.removeAsync(path.join(downloadPath, fileName)).catch(() => null);
           }
         }),
@@ -307,8 +287,12 @@ function updateDownloadPath(api: IExtensionApi, gameId?: string) {
   const currentDownloadPath = selectors.downloadPathForGame(state, gameId);
 
   let nameIdMap: { [name: string]: string } = {};
-  let downloads = {};
+  // dlId -> download record
+  let downloads: Record<string, IDownload> = {};
   let downloadChangeHandler: (evt: string, fileName: string) => void;
+  // when the folder turns out to be unavailable nothing gets reconciled, so
+  // there is also nothing to watch and no refresh to announce
+  let folderAvailable = true;
   return (removeInvalidDownloads(api, gameId) as any)
     .then(() => removeInvalidFileExts(api, gameId))
     .then(() =>
@@ -334,8 +318,15 @@ function updateDownloadPath(api: IExtensionApi, gameId?: string) {
         normalize,
       );
 
+      // Get the downloads for this game, but only the ones that
+      // have a valid localPath.
       const knownDLs = Object.keys(downloads)
-        .filter((dlId) => getDownloadGames(downloads[dlId])[0] === gameId)
+        .filter(
+          (dlId) =>
+            getDownloadGames(downloads[dlId])[0] === gameId &&
+            downloads[dlId].localPath !== undefined &&
+            !isTempDownloadName(downloads[dlId].localPath),
+        )
         .map((dlId) => normalize(downloads[dlId].localPath || ""));
 
       return refreshDownloads(
@@ -371,15 +362,30 @@ function updateDownloadPath(api: IExtensionApi, gameId?: string) {
               ],
             );
           }),
-      )
-        .catch(UserCanceled, () => null)
-        .catch((err) => {
-          api.showErrorNotification("Failed to refresh download directory", err, {
-            allowReport: err.code !== "EPERM",
-          });
+      ).catch((err: unknown) => {
+        if (err instanceof UserCanceled) {
+          return null;
+        }
+        if (err instanceof VortexError && err.data.kind === "fs:not-found") {
+          // reconciling against a folder Vortex can't see would delete every
+          // download record for this game, so reconciliation is skipped
+          folderAvailable = false;
+          api.showErrorNotification(
+            "Download folder is not available",
+            getErrorMessageOrDefault(err),
+            { allowReport: false },
+          );
+          return null;
+        }
+        api.showErrorNotification("Failed to refresh download directory", err, {
+          allowReport: getErrorCode(err) !== "EPERM",
         });
+      });
     })
     .then(() => {
+      if (!folderAvailable) {
+        return;
+      }
       watchDownloads(api, currentDownloadPath, downloadChangeHandler);
       api.events.emit("downloads-refreshed");
     })
@@ -738,6 +744,29 @@ function checkPendingTransfer(api: IExtensionApi): PromiseBB<ITestResult> {
 
 let shutdownPending: boolean = false;
 let shutdownInitiated: boolean = false;
+let shutdownTimer: NodeJS.Timeout | undefined;
+
+const SHUTDOWN_DELAY_SEC = 30;
+
+function initiateShutdown() {
+  if (process.platform === "win32") {
+    winapi.InitiateSystemShutdown("Vortex downloads finished", SHUTDOWN_DELAY_SEC, false, false);
+    return;
+  }
+  shutdownTimer = setTimeout(() => {
+    spawn("systemctl", ["poweroff"], { detached: true, stdio: "ignore" })
+      .on("error", (err) => log("error", "failed to shut down", err.message))
+      .unref();
+  }, SHUTDOWN_DELAY_SEC * 1000);
+}
+
+function abortShutdown() {
+  if (process.platform === "win32") {
+    winapi.AbortSystemShutdown();
+  } else {
+    clearTimeout(shutdownTimer);
+  }
+}
 
 /**
  * schedule or abort shutdown as necessary. This gets called constantly as downloads
@@ -747,13 +776,13 @@ let shutdownInitiated: boolean = false;
 function updateShutdown(downloads: { [key: string]: IDownload }) {
   if (shutdownInitiated && (Object.keys(downloads).length > 0 || !shutdownPending)) {
     // cancel shutdown if the conditions for it are no longer met
-    winapi.AbortSystemShutdown();
+    abortShutdown();
     shutdownInitiated = false;
   }
 
   if (!shutdownInitiated && shutdownPending && Object.keys(downloads).length === 0) {
     // schedule shutdown if conditions are met
-    winapi.InitiateSystemShutdown("Vortex downloads finished", 30, false, false);
+    initiateShutdown();
     shutdownInitiated = true;
   }
 }
@@ -1060,7 +1089,7 @@ function init(context: IExtensionContext): boolean {
       activeDownloads: selectors.activeDownloads(context.api.getState()),
       toggleShutdown: () => toggleShutdown(context.api),
     }),
-    () => process.platform === "win32",
+    () => ["win32", "linux"].includes(process.platform),
   );
 
   context.registerTest("verify-downloads-transfers", "gamemode-activated", () =>

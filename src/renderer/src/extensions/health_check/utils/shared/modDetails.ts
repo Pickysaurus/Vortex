@@ -3,8 +3,9 @@ import type { components } from "@vortex/nexus-api-v3";
 import type { IModDetails } from "@/extensions/health_check/types";
 import { createVortexNexusV3Client } from "@/extensions/nexus_integration/nexusV3Client";
 import type { IExtensionApi } from "@/types/IExtensionContext";
+import { createKeyedCache, type KeyedCache } from "@/util/keyedCache";
 
-import { chunked, createKeyedCache, resolveCached, type KeyedCache } from "./batchCache";
+import { chunked, resolveCached } from "./batchCache";
 
 type V3Client = ReturnType<typeof createVortexNexusV3Client>;
 type V3ModDetail = components["schemas"]["ModDetail"];
@@ -40,12 +41,16 @@ async function fetchModDetailRows(client: V3Client, modUIDs: string[]): Promise<
  * /mods/batch endpoint, chunked to the per-request id limit and cached by uid
  * so re-runs only fetch the misses. Shared by the mod- and file-level checks.
  */
-export async function getModDetails(api: IExtensionApi, modUIDs: string[]): Promise<IModDetails[]> {
+export async function getModDetails(
+  api: IExtensionApi,
+  modUIDs: string[],
+  signal?: AbortSignal,
+): Promise<IModDetails[]> {
   if (modUIDs.length === 0) {
     return [];
   }
 
-  const client = createVortexNexusV3Client(api);
+  const client = createVortexNexusV3Client(api, { signal });
   const byUid = await resolveCached(modUIDs, modDetailCache, async (missing) => {
     const details = (await fetchModDetailRows(client, missing)).map(toModDetails);
     return new Map(details.map((detail) => [detail.modUID, detail]));

@@ -1,15 +1,11 @@
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 import { Button } from "./Button";
 
 // --- Helpers ---
-
-afterEach(() => {
-  cleanup();
-});
 
 const getButton = () => screen.getByRole("button", { name: /click/i });
 
@@ -67,6 +63,7 @@ describe("Button", () => {
       ["info", "nxm-button-info"],
       ["neutral", "nxm-button-neutral"],
       ["success", "nxm-button-success"],
+      ["danger", "nxm-button-danger"],
       ["premium", "nxm-button-premium"],
     ] as const)('applies correct class for brand="%s"', (brand, cls) => {
       render(<Button brand={brand}>Click</Button>);
@@ -96,20 +93,32 @@ describe("Button", () => {
   });
 
   describe("size", () => {
-    it('applies xs class for size="xs"', () => {
-      render(<Button size="xs">Click</Button>);
-      expect(getButton()).toHaveClass("nxm-button-xs");
-    });
-
     it('applies sm class for size="sm"', () => {
       render(<Button size="sm">Click</Button>);
       expect(getButton()).toHaveClass("nxm-button-sm");
     });
 
-    it('does not apply size class for size="md" (default)', () => {
+    it('does not apply a size class for size="md" (default)', () => {
       render(<Button>Click</Button>);
-      expect(getButton()).not.toHaveClass("nxm-button-xs");
       expect(getButton()).not.toHaveClass("nxm-button-sm");
+    });
+  });
+
+  describe("expanded style", () => {
+    it("paints the expanded state by default", () => {
+      render(<Button aria-expanded>Click</Button>);
+      expect(getButton()).not.toHaveClass("nxm-button-no-expanded-style");
+    });
+
+    it("opts out with hasExpandedStyle={false}, keeping aria-expanded", () => {
+      render(
+        <Button aria-expanded hasExpandedStyle={false}>
+          Click
+        </Button>,
+      );
+      expect(getButton()).toHaveClass("nxm-button-no-expanded-style");
+      expect(getButton()).toHaveAttribute("aria-expanded", "true");
+      expect(getButton()).not.toHaveAttribute("hasExpandedStyle");
     });
   });
 

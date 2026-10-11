@@ -1,15 +1,13 @@
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+import { settleTransitions } from "@/test-utils/transitions";
 
 import { Modal } from "./Modal";
 
 // --- Helpers ---
-
-afterEach(() => {
-  cleanup();
-});
 
 const renderComponent = (props: Partial<React.ComponentProps<typeof Modal>> = {}) => {
   const onClose = vi.fn();
@@ -31,15 +29,19 @@ describe("Modal", () => {
     expect(screen.queryByText("Body content")).not.toBeInTheDocument();
   });
 
-  it("renders the title and children when open", () => {
+  it("renders the title and children when open", async () => {
     renderComponent({ title: "My title" });
     expect(screen.getByText("My title")).toBeInTheDocument();
     expect(screen.getByText("Body content")).toBeInTheDocument();
+
+    await settleTransitions();
   });
 
-  it("applies the size modifier class", () => {
+  it("applies the size modifier class", async () => {
     renderComponent({ size: "lg" });
     expect(document.querySelector(".nxm-modal")).toHaveClass("nxm-modal-lg");
+
+    await settleTransitions();
   });
 
   it("renders a close button by default that calls onClose", async () => {
@@ -50,8 +52,10 @@ describe("Modal", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("hides the close button when showCloseButton is false", () => {
+  it("hides the close button when showCloseButton is false", async () => {
     renderComponent({ showCloseButton: false, title: "My title" });
     expect(document.querySelector(".nxm-modal-close")).not.toBeInTheDocument();
+
+    await settleTransitions();
   });
 });

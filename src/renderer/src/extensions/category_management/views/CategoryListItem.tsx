@@ -14,7 +14,7 @@ import React, { useRef, useState } from "react";
 import { useDrag, useDrop } from "react-dnd";
 
 import { Button } from "@/ui/components/button/Button";
-import { Input } from "@/ui/components/form/input/Input";
+import { TextField } from "@/ui/components/form/text_field/TextField";
 import { Icon } from "@/ui/components/icon/Icon";
 import { Toolbar } from "@/ui/components/toolbar/Toolbar";
 import type { IToolbarAction } from "@/ui/components/toolbar/ToolbarGroup";
@@ -113,16 +113,19 @@ export default function CategoryListItem({
     {
       label: "Edit",
       iconPath: mdiRename,
+      testId: "category-rename",
       onClick: () => setEditMode("name"),
     },
     {
       label: "New Sub-Category",
       iconPath: mdiFolderPlus,
+      testId: "category-add-subcategory",
       onClick: () => setEditMode("subcategory"),
     },
     {
       label: "Delete",
       iconPath: mdiDelete,
+      testId: "category-delete",
       onClick: () => remove(categoryId),
     },
   ];
@@ -170,7 +173,7 @@ export default function CategoryListItem({
                 appearance="weak"
                 aria-label="Expand/Collapse"
                 brand="neutral"
-                className="nxm-category-expand"
+                data-testid="category-expand"
                 leftIconPath={expanded ? mdiChevronDown : mdiChevronRight}
                 title="Expand/Collapse"
                 onClick={() => expand(categoryId)}
@@ -190,13 +193,13 @@ export default function CategoryListItem({
 
             {editName && (
               <div className="flex gap-2">
-                <Input
+                <TextField
                   hideLabel
                   className="grow"
-                  id={`rename-category-${categoryId}`}
+                  data-testid="category-rename-input"
+                  label="Rename category"
                   minLength={1}
                   placeholder="Rename category"
-                  size="sm"
                   type="text"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
@@ -206,8 +209,8 @@ export default function CategoryListItem({
                   appearance="moderate"
                   aria-label="Save"
                   brand="primary"
+                  data-testid="category-rename-save"
                   leftIconPath={mdiPlus}
-                  size="sm"
                   onClick={rename}
                 />
 
@@ -215,8 +218,8 @@ export default function CategoryListItem({
                   appearance="moderate"
                   aria-label="Cancel"
                   brand="neutral"
+                  data-testid="category-rename-cancel"
                   leftIconPath={mdiCancel}
-                  size="sm"
                   onClick={() => setEditMode()}
                 />
               </div>
@@ -226,21 +229,20 @@ export default function CategoryListItem({
           </div>
         </div>
 
-        <div>
-          <Toolbar>
-            <ToolbarGroup actions={actions} maxVisible={4} />
-          </Toolbar>
-        </div>
+        <Toolbar>
+          <ToolbarGroup actions={actions} maxVisible={4} />
+        </Toolbar>
       </div>
 
       {addNew && (
         <div className="flex gap-2">
-          <Input
+          <TextField
             hideLabel
             className="grow"
+            data-testid="category-subcategory-input"
+            label="Add subcategory"
             minLength={1}
             placeholder="Add subcategory"
-            size="sm"
             type="text"
             value={newSubcategoryName}
             onChange={(e) => setNewSubcategoryName(e.target.value)}
@@ -250,6 +252,7 @@ export default function CategoryListItem({
             appearance="moderate"
             aria-label="Save"
             brand="primary"
+            data-testid="category-subcategory-save"
             disabled={newSubcategoryName.length < 2}
             leftIconPath={mdiPlus}
             size="sm"
@@ -260,8 +263,8 @@ export default function CategoryListItem({
             appearance="moderate"
             aria-label="Cancel"
             brand="neutral"
+            data-testid="category-subcategory-cancel"
             leftIconPath={mdiCancel}
-            size="sm"
             onClick={() => setEditMode()}
           />
         </div>

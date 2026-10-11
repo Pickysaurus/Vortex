@@ -1,15 +1,14 @@
-import { mdiMonitor, mdiMonitorShimmer } from "@mdi/js";
 import React, { type FC, Suspense } from "react";
 import { Button as ReactButton } from "react-bootstrap";
 import { addStyle } from "react-bootstrap/lib/utils/bootstrapUtils";
-import { useDispatch, useSelector } from "react-redux";
+import { useSelector } from "react-redux";
 
-import { setUseModernLayout } from "../actions/window";
 import { MainProvider, MenuLayerProvider, PagesProvider, WindowProvider } from "../contexts";
 import Spinner from "../controls/Spinner";
+import { ZoomHotkeyIndicator } from "../extensions/settings_interface/components/ZoomHotkeyIndicator";
 import type { IState } from "../types/IState";
-import { Button } from "../ui/components/button/Button";
 import { MutexProvider } from "../util/MutexContext";
+import { DevToolsMenu } from "./components/dev_tools/DevToolsMenu";
 import { ClassicLayout, ModernLayout } from "./layout";
 
 addStyle(ReactButton, "secondary");
@@ -18,31 +17,11 @@ addStyle(ReactButton, "ghost");
 addStyle(ReactButton, "link");
 addStyle(ReactButton, "inverted");
 
-const LayoutSwitcher = () => {
-  if (process.env.NODE_ENV !== "development") {
-    return null;
-  }
-
-  const dispatch = useDispatch();
-  const useModernLayout = useSelector((state: IState) => state.settings.window.useModernLayout);
-
-  return (
-    <Button
-      brand="primary"
-      className="fixed right-4 bottom-4 z-toast"
-      leftIconPath={useModernLayout ? mdiMonitor : mdiMonitorShimmer}
-      size="sm"
-      title={useModernLayout ? "Switch to Classic" : "Switch to Modern"}
-      onClick={() => dispatch(setUseModernLayout(!useModernLayout))}
-    />
-  );
-};
-
 export interface IBaseProps {
   className?: string;
 }
 
-export const AppLayout: FC<IBaseProps> = () => {
+export const AppLayout: FC<React.PropsWithChildren<IBaseProps>> = () => {
   const useModernLayout = useSelector((state: IState) => state.settings.window.useModernLayout);
 
   return (
@@ -55,7 +34,9 @@ export const AppLayout: FC<IBaseProps> = () => {
                 {useModernLayout ? <ModernLayout /> : <ClassicLayout />}
               </MutexProvider>
 
-              <LayoutSwitcher />
+              <ZoomHotkeyIndicator />
+
+              {process.env.NODE_ENV === "development" && <DevToolsMenu />}
             </PagesProvider>
           </MainProvider>
         </MenuLayerProvider>

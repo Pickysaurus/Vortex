@@ -12,6 +12,7 @@ import {
 } from "@playwright/test";
 
 import { cleanupFakeGame } from "../fixtures/game-setup/fake-game";
+import { seededAuthStatePath } from "../helpers/authState";
 import {
   type DiagnosticsTeardown,
   instrumentNexusPage,
@@ -22,6 +23,7 @@ import { manageGame, type ManagedGame } from "../helpers/games";
 import { stubRemoteImages } from "../helpers/imageStub";
 import { loginToNexus } from "../helpers/login";
 import { launchNexusBrowser } from "../helpers/nexusBrowser";
+import { neutralizeOsProtocolRegistration } from "../helpers/protocolClient";
 import { Timeouts } from "../helpers/timeouts";
 import type { NexusUser } from "../helpers/users";
 import {
@@ -74,11 +76,22 @@ async function waitForMainWindow(vortexApp: ElectronApplication): Promise<Page> 
       vortexApp.process().off("exit", onExit);
     };
 
+    const found = (page: Page) => {
+      cleanup();
+      resolve(page);
+    };
+
+    // A window is usually reported before its first navigation, while its URL
+    // is still empty, so a window that isn't the main one yet may become it.
     const onWindow = (page: Page) => {
       if (isMainWindow(page)) {
-        cleanup();
-        resolve(page);
+        found(page);
+        return;
       }
+      page
+        .waitForURL(/index\.html/, { timeout: Timeouts.LIFECYCLE })
+        .then(() => found(page))
+        .catch(() => undefined);
     };
 
     // If the Electron process crashes/exits before the main window appears,
@@ -100,6 +113,9 @@ async function waitForMainWindow(vortexApp: ElectronApplication): Promise<Page> 
 
     vortexApp.on("window", onWindow);
     vortexApp.process().on("exit", onExit);
+
+    // Windows that were already open but not yet navigated when we checked above.
+    for (const win of vortexApp.windows()) onWindow(win);
   });
 }
 
@@ -292,9 +308,14 @@ export const test = base.extend<VortexTestFixtures & VortexOptions, VortexWorker
             try {
               const window = await setupMainWindow(app, Timeouts.SNAPSHOT);
               windowTeardown = await instrumentVortexWindow(app, window, "snapshot");
+              // Reuse a Nexus session saved locally by `pnpm auth:capture`, so
+              // logging in skips the captcha. CI has none, so it logs in with
+              // the username and password as before.
+              const seededStorageState = seededAuthStatePath(user);
               const loginResult = await loginToNexus(app, window, user, {
                 skipSteps: true,
                 keepBrowser: true,
+                storageStatePath: seededStorageState,
                 nexusDiagnostics: { testInfo, prefix: "snapshot-nexus" },
               });
               if (loginResult !== null) {
@@ -370,6 +391,10 @@ export const test = base.extend<VortexTestFixtures & VortexOptions, VortexWorker
       timeout: Timeouts.LIFECYCLE,
       inspect: !!process.env.VORTEX_E2E_INSPECT,
     });
+    // Test-side replacement for the removed production VORTEX_E2E gate: stop this
+    // instance from seizing the OS nxm:// handler. Runs before the renderer's
+    // deferred protocol registration (launchVortexApp returns at app-ready).
+    await neutralizeOsProtocolRegistration(app);
     await use(app);
     await closeElectronApp(app);
   },

@@ -4,7 +4,8 @@
   "description": "Support for dinput mods",
   "scripts": {
     "build": "node build.mjs && pnpm extractInfo",
-    "typecheck": "pnpm tsc"
+    "typecheck": "pnpm tsc",
+    "lint:strict": "pnpm exec node ../../scripts/strict-lint.mjs"
   },
   "author": "Black Tree Gaming Ltd.",
   "license": "GPL-3.0",
@@ -14,12 +15,11 @@
     "extensionName": "Mod Type: dinput"
   },
   "devDependencies": {
+    "@nexusmods/vortex-api": "workspace:*",
     "@types/bluebird": "catalog:",
-    "@types/i18next": "catalog:",
     "@types/redux": "catalog:",
     "bluebird": "catalog:",
-    "copyfiles": "catalog:",
-    "@nexusmods/vortex-api": "workspace:*"
+    "copyfiles": "catalog:"
   },
   "nx": {
     "tags": [

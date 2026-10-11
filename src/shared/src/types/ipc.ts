@@ -2,6 +2,9 @@
 // Everything in here is compile-time only, meaning the interfaces you find here
 // are never used to create an object. They are only used for type inferrence.
 
+import type { SerializedVortexError } from "../errors/serialization";
+import type { FileSystem, Status } from "../fs/filesystem";
+import type { QualifiedPathWire } from "../fs/paths";
 import type { SerializedSpan } from "../telemetry/types";
 import type { DownloadCheckpoint, DownloadProgress, DownloadStatus } from "./download";
 import type {
@@ -20,7 +23,6 @@ import type {
   TraceConfig,
   TraceCategoriesAndOptions,
 } from "./electron";
-import type { DownloadErrorPayload } from "./errors";
 import type { FeatureFlag } from "./flags";
 import type { Level } from "./logging";
 import type { PersistedHive, PersistedState } from "./state";
@@ -43,6 +45,8 @@ export interface AppInitMetadata {
   commandLine: Record<string, unknown>;
   /** Install type (regular installer or managed like Epic/MS Store) */
   installType?: "regular" | "managed";
+  /** Whether the updater runs at all; decided in main, since the renderer cannot read the env */
+  updaterActive?: boolean;
   /** Application version string */
   version?: string;
   /** Instance ID for crash reporting */
@@ -51,20 +55,76 @@ export interface AppInitMetadata {
   warnedAdmin?: number;
 }
 
-/** Status of the auto-updater in main process */
-export interface UpdateStatus {
-  /** Whether an update is available */
-  available: boolean;
-  /** Whether update is downloaded and ready to install */
-  downloaded: boolean;
-  /** Version of the available update */
-  version?: string;
-  /** Release notes/changelog for the update */
-  releaseNotes?: string;
-  /** Download progress (0-100) if downloading */
-  downloadProgress?: number;
-  /** Error message if update check failed */
-  error?: string;
+/**
+ * What kind of update a download/staged installer represents. Patches
+ * auto-download and install on restart; regular updates wait for the user;
+ * downgrades only ever follow an explicit confirmation.
+ */
+export type UpdateKind = "patch" | "update" | "downgrade";
+
+/**
+ * The auto-updater as an explicit state machine (modeled on VS Code's
+ * updater): exactly one state at a time, each carrying only the data valid
+ * for it, so contradictory combinations (stale progress on an error, a patch
+ * flag on a minor update) are unrepresentable. The UI renders purely from
+ * the current state.
+ */
+export type UpdaterState =
+  /** updates turned off (channel "none") */
+  | { type: "disabled" }
+  /** nothing on offer */
+  | { type: "idle" }
+  /** a check is in flight; manual checks always render visible feedback */
+  | { type: "checking"; manual: boolean }
+  /** a newer version needs a user decision to download */
+  | { type: "available"; version: string; releaseNotes?: string }
+  /**
+   * the stable channel's latest is older than the running version; only ever
+   * entered on a purposeful switch to stable, awaiting confirm/decline
+   */
+  | { type: "downgrade-offered"; version: string }
+  /**
+   * a download is running; percent is absent until the first progress event.
+   * manual marks a download the user's own action set in motion (Download,
+   * a confirmed downgrade, a manual check that found a patch), those render
+   * visibly; only background-initiated patch downloads stay silent.
+   */
+  | { type: "downloading"; version: string; kind: UpdateKind; manual: boolean; percent?: number }
+  /** downloaded and verified; installs on quit, or immediately via Restart Now */
+  | { type: "staged"; version: string; kind: UpdateKind; releaseNotes?: string }
+  /**
+   * a check or download failed in a way the user should hear about; retry
+   * carries the still-known update so a working Download can be offered
+   */
+  | {
+      type: "error";
+      message: string;
+      manual: boolean;
+      retry?: { version: string; releaseNotes?: string };
+    };
+
+/** The full updater snapshot pushed to (and queried by) the renderer */
+export interface UpdaterSnapshot {
+  state: UpdaterState;
+  /**
+   * Set on the first launch after an update: the version that was running
+   * before. Drives the one-time "Vortex was updated" notice; orthogonal to
+   * the state machine.
+   */
+  justUpdatedFrom?: string;
+}
+
+/**
+ * Reply to `updater:get-status`. The renderer polls rather than being pushed
+ * (the same model as downloads and uploads). `seq` counts snapshots recorded
+ * so far; passing it back as `since` on the next poll returns every snapshot
+ * after it in `changes`, so a state that lasted 300 ms is still delivered.
+ * `snapshot` is always the latest.
+ */
+export interface UpdaterStatusResponse {
+  seq: number;
+  snapshot: UpdaterSnapshot;
+  changes: UpdaterSnapshot[];
 }
 
 /** Vortex application paths */
@@ -100,44 +160,74 @@ export type WireResolvedResource = {
   chunkEndpoints?: WireEndpoint[];
 };
 
-type Wirify<T> = { [K in keyof T]: T[K] extends URL ? string : T[K] };
-export type WireDownloadError = {
-  payload: Wirify<DownloadErrorPayload>;
-  message: string;
-};
-
 export type WireDownloadState = DownloadProgress & {
   status: DownloadStatus;
-  error: WireDownloadError | null;
+  error: Serializable | null;
 };
 
 export type WireDownloadCheckpoint = DownloadCheckpoint<string>;
 
 /**
- * Structured error envelope shared across the IPC boundaries. The serializer is
- * agnostic to the error classes it carries: it serializes `name`, `code`, and
- * any extra own enumerable properties (in `data`), with `cause` chains
- * serialized recursively. The receiver rehydrates a generic `Error` with those
- * fields copied back, so callers can branch on `err.name` and reconstruct their
- * concrete error type.
+ * The part layout an S3 multipart upload session was created with: one
+ * presigned URL per part, plus the URL that closes the session. Mirrors the v3
+ * API's `CreateMultipartUploadSuccess` in camelCase — that endpoint is defined
+ * against the Amazon S3 multipart specification.
  */
-export interface SerializedError {
-  message: string;
-  name?: string;
-  code?: string;
-  data?: Record<string, unknown>;
-  cause?: SerializedError;
-}
+export type WireS3MultipartLayout = {
+  partSizeBytes: number;
+  partPresignedUrls: string[];
+  completePresignedUrl: string;
+};
 
 /**
- * A reply envelope crossing an IPC boundary: either a successful value or a
- * serialized error. Electron's native invoke serialization would
- * otherwise reduce it to a generic `Error`, losing its type/name.
- * The error rides as an opaque {@link Serializable}
- * (a {@link SerializedError} shape at runtime) so it
- * satisfies the IPC serialization contract.
+ * Headers a presigned upload URL may cover with its signature. Whatever the
+ * signature includes has to be sent with exactly the value the signer used —
+ * a wrong value and a missing header fail identically, as
+ * `SignatureDoesNotMatch`. The caller supplies them because only it knows what
+ * the storage session was created with.
  */
-export type WireResult<T> = { ok: true; value: T } | { ok: false; error: Serializable };
+export type WireUploadHeaders = {
+  contentType?: string;
+  contentDisposition?: string;
+};
+
+export type WireUploadRequest = {
+  url: string;
+  filePath: string;
+  fileSize: number;
+  /** Tags the `upload:progress` events emitted while this transfer runs. */
+  uploadId: number;
+  headers?: WireUploadHeaders;
+};
+
+export type WireS3MultipartRequest = {
+  layout: WireS3MultipartLayout;
+  filePath: string;
+  fileSize: number;
+  uploadId: number;
+  headers?: WireUploadHeaders;
+};
+
+/**
+ * Byte progress for an upload that is still running. `transferred` can move
+ * backwards: a retried request restarts its body, and for a multipart upload
+ * only the current part rewinds.
+ */
+export type WireUploadProgress = {
+  transferred: number;
+  total: number;
+};
+
+/**
+ * The pair-shape envelope used by the invoke/handle and callback paths: the
+ * channel's return value lives in `data`, the optional VortexError lives in
+ * `error`. The receiver narrows on `error !== undefined` and deserializes-and-
+ * throws when present. Sender and receiver are owned by us and every pair flows
+ * through the better-IPC helpers, so no collision check is needed.
+ */
+export type WireReply<T> =
+  | { data: T; error?: undefined }
+  | { data?: undefined; error: SerializedVortexError };
 
 export interface CallbackChannels {
   "example:ping": (ping: string) => Promise<{ pong: string }>;
@@ -157,7 +247,7 @@ export type RendererCallbackChannels = {
   [C in keyof CallbackChannels as `callback:${C}`]: CallbackChannels[C] extends (
     ...args: infer _Args
   ) => Promise<infer Return>
-    ? (collationId: number, result: WireResult<Return>) => void
+    ? (collationId: number, result: Return) => void
     : never;
 };
 
@@ -181,6 +271,9 @@ export interface RendererChannels extends RendererCallbackChannels {
   /** Opens the file using the default application for the file extension */
   "shell:openFile": (filePath: string) => void;
 
+  /** Opens the OS file manager with the file selected */
+  "shell:showItemInFolder": (filePath: string) => void;
+
   // Persistence: Send diff operations to main for persistence
   "persist:diff": (hive: PersistedHive, operations: DiffOperation[]) => void;
 
@@ -195,6 +288,16 @@ export interface RendererChannels extends RendererCallbackChannels {
 
   // Updater: Download the available update (installAfterDownload triggers auto-restart when done)
   "updater:download": (channel: string, installAfterDownload: boolean) => void;
+
+  // Updater: Download the downgrade offered after an explicit switch to
+  // stable. Ignored unless a downgrade offer is outstanding.
+  "updater:download-downgrade": (installAfterDownload: boolean) => void;
+
+  // Updater: Decline the outstanding downgrade offer. Clears the offer;
+  // only another purposeful switch to stable raises it again.
+  "updater:decline-downgrade": () => void;
+  // Updater: stop the running download (the user dismissed its notification)
+  "updater:cancel-download": () => void;
 
   // Updater: Restart and install update
   "updater:restart-and-install": () => void;
@@ -290,8 +393,15 @@ export interface InvokeChannels {
   // Persistence: Get all hydration data at startup (called once during init)
   "persist:get-hydration": () => Promise<Partial<PersistedState>>;
 
-  // Updater: Query current update status from main process
-  "updater:get-status": () => Promise<UpdateStatus>;
+  // Updater: the renderer polls this (pull, like downloads and uploads). With
+  // `since`, the reply also lists every snapshot recorded after that sequence
+  // number, so short-lived states are seen and not sampled past.
+  "updater:get-status": (since?: number) => Promise<UpdaterStatusResponse>;
+  // Updater: Release notes covering the update the app just went through
+  // (null when the launch did not follow an update or notes are unavailable).
+  // The renderer passes its persisted channel, the handler can be invoked
+  // before the first check has established one in main.
+  "updater:get-update-changelog": (channel: string) => Promise<string | null>;
   // Dialog channels
   "dialog:showOpen": (options: OpenDialogOptions) => Promise<OpenDialogReturnValue>;
   "dialog:showSave": (options: SaveDialogOptions) => Promise<SaveDialogReturnValue>;
@@ -422,6 +532,17 @@ export interface InvokeChannels {
     bytesPerSecond?: number | string;
   }) => Promise<void>;
 
+  // Upload channels
+  "upload:file": (request: WireUploadRequest) => Promise<void>;
+  "upload:s3-multipart": (request: WireS3MultipartRequest) => Promise<void>;
+  /** Byte progress for a running upload, or null once it has settled. */
+  "upload:getProgress": (uploadId: number) => Promise<WireUploadProgress | null>;
+  /**
+   * Stops a running upload; the call that started it rejects with an
+   * `UploadError` carrying `cancellation`.
+   */
+  "upload:cancel": (uploadId: number) => Promise<void>;
+
   // Adaptor host — renderer queries adaptor services through these
   "adaptors:list": () => Promise<
     Array<{
@@ -453,7 +574,81 @@ export interface InvokeChannels {
     path: { value: string };
     regex?: string;
   }) => Promise<string>;
+
+  "fs:copy": (
+    source: QualifiedPathWire,
+    target: QualifiedPathWire,
+    options: Parameters<FileSystem["copy"]>[2],
+  ) => Promise<void>;
+  "fs:createDirectory": (path: QualifiedPathWire) => Promise<void>;
+  "fs:createLink": (
+    from: QualifiedPathWire,
+    to: QualifiedPathWire,
+    type: Parameters<FileSystem["createLink"]>[2],
+  ) => Promise<void>;
+  "fs:delete": (path: QualifiedPathWire) => Promise<void>;
+  "fs:deleteRecursive": (path: QualifiedPathWire) => Promise<void>;
+  "fs:readFile": (path: QualifiedPathWire) => Promise<Uint8Array>;
+  "fs:writeFile": (path: QualifiedPathWire, contents: Uint8Array) => Promise<void>;
+  "fs:move": (
+    source: QualifiedPathWire,
+    target: QualifiedPathWire,
+    options: Parameters<FileSystem["move"]>[2],
+  ) => Promise<void>;
+  "fs:stat": (
+    path: QualifiedPathWire,
+    options: Parameters<FileSystem["stat"]>[1],
+  ) => Promise<TemporalWire<Awaited<ReturnType<FileSystem["stat"]>>>>;
+
+  /**
+   * Opens a directory enumeration session on the main process. Returns a
+   * handle the renderer pulls batches of entries through with
+   * {@link InvokeChannels["fs:enumerate-next"]} until done, then releases
+   * with {@link InvokeChannels["fs:enumerate-close"]}.
+   */
+  "fs:enumerate-open": (
+    path: QualifiedPathWire,
+    options?: Parameters<FileSystem["enumerateDirectory"]>[1],
+  ) => Promise<number>;
+  "fs:enumerate-next": (handle: number, max: number) => Promise<EnumerateReply>;
+  "fs:enumerate-close": (handle: number) => Promise<void>;
+
+  /**
+   * Opens a stream session on the main process. Returns a handle the
+   * renderer pulls chunks of bytes through with
+   * {@link InvokeChannels["fs:stream-read"]} (`mode "r"`) or pushes bytes
+   * through with {@link InvokeChannels["fs:stream-write"]} (`mode "w"`)
+   * until done, then releases with
+   * {@link InvokeChannels["fs:stream-close"]}.
+   */
+  "fs:stream-open": (
+    path: QualifiedPathWire,
+    mode: "r" | "w",
+    options?: Parameters<FileSystem["createStream"]>[2],
+  ) => Promise<number>;
+  "fs:stream-read": (handle: number, max: number) => Promise<StreamReadReply>;
+  "fs:stream-write": (handle: number, bytes: Uint8Array) => Promise<void>;
+  "fs:stream-close": (handle: number) => Promise<void>;
 }
+
+/** Wire reply of {@link InvokeChannels["fs:stream-read"]}. `bytes` holds the
+ *  chunks read during this call; sizing is chunk-granular, so a reply may
+ *  exceed `max` by up to one underlying chunk. A `done: true` reply may
+ *  still carry the tail of the file when EOF hit mid-batch. */
+export type StreamReadReply = { done: boolean; bytes: Uint8Array };
+
+export type EnumerateEntryWire = QualifiedPathWire | [QualifiedPathWire, TemporalWire<Status>];
+
+/** Wire reply of {@link InvokeChannels["fs:enumerate-next"]}. Entries are
+ *  always present: a `done: true` reply may still carry the tail of the
+ *  listing when the iterator exhausted mid-batch. */
+export type EnumerateReply = { done: boolean; entries: EnumerateEntryWire[] };
+
+export type TemporalWire<T> = T extends Temporal.Instant
+  ? bigint
+  : T extends object
+    ? { [K in keyof T]: TemporalWire<T[K]> }
+    : T;
 
 /** Represents all IPC-safe typed arrays */
 export type TypedArray =
@@ -501,38 +696,3 @@ export type Serializable =
   | { [key: string]: Serializable }
   | Map<Serializable, Serializable>
   | Set<Serializable>;
-
-type IsAny<T> = 0 extends 1 & T ? true : false;
-
-type HasError<T> = T extends { __error__: string }
-  ? true
-  : T extends object
-    ? { [K in keyof T]: HasError<T[K]> }[keyof T] extends true
-      ? true
-      : false
-    : false;
-
-// NOTE(erri120): If you found this type because you got an error, that means you're trying to pass data across the IPC
-// that can't be serialized. Check the list of supported types above and pick one of them. If you think there is a type missing
-// from the list above, write a small proof and we can discuss it.
-//
-/** Utility type to assert that the type is serializable */
-export type AssertSerializable<T> =
-  // any
-  IsAny<T> extends true
-    ? { __error__: "any is not serializable for IPC" }
-    : // known serializables
-      T extends Serializable
-      ? T
-      : // objects
-        T extends object
-        ? HasError<{ [K in keyof T]: AssertSerializable<T[K]> }> extends true
-          ? { __error__: "Type is not serializable for IPC" }
-          : T
-        : // everything else
-          { __error__: "Type is not serializable for IPC" };
-
-/** Utility type to check all args are serializable */
-export type SerializableArgs<T extends readonly unknown[]> = {
-  [K in keyof T]: AssertSerializable<T[K]>;
-};

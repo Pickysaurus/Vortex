@@ -39,6 +39,7 @@ export const ReplaceRows = ({
         <CandidateCard
           candidate={requirement.candidate}
           ctx={ctx}
+          enabledFile={requirement.installedFile}
           resolution={{ requirementState: requirementStateFor(requirement) }}
         />
       </div>
@@ -54,7 +55,6 @@ export const ReplaceRows = ({
               appearance="subdued"
               brand="neutral"
               leftIconPath={nxmModOutline}
-              size="sm"
               onClick={handleViewInMods}
             >
               {t("detail::item::view_in_mods")}

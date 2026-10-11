@@ -35,12 +35,21 @@ export async function downloadModViaModManager(
     await expect(modPage.modManagerDownload).toBeVisible({ timeout: Timeouts.NETWORK });
     await modPage.modManagerDownload.click({ timeout: Timeouts.NETWORK });
 
+    // A mod with file-level requirements opens the "Download mod file" modal
+    // before emitting nxm://; its primary Download action fires it. Mods without
+    // requirements skip the modal (nxm:// fires on the click above), so bound the
+    // wait rather than blocking on the default 30s timeout for that case.
     if (
       await modPage.downloadModal
-        .waitFor({ state: "visible" })
+        .waitFor({ state: "visible", timeout: Timeouts.MODAL })
         .then(() => true)
         .catch(() => false)
     ) {
+      // For premium the same modal opens on any mod but only reports that the
+      // download is already starting — there's nothing to click.
+      await expect(modPage.modalDownloadLink.or(modPage.modalDownloadStarting)).toBeVisible({
+        timeout: Timeouts.NETWORK,
+      });
       if (await modPage.modalDownloadLink.isVisible().catch(() => false)) {
         await modPage.modalDownloadLink.click({ timeout: Timeouts.NETWORK });
       }

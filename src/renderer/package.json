@@ -9,7 +9,8 @@
     "typecheck": "pnpm exec tsc -p tsconfig.json",
     "lint": "pnpm exec eslint --quiet --concurrency auto .",
     "lint:verbose": "pnpm exec eslint --concurrency auto .",
-    "api": "pnpm exec rimraf ./lib && pnpm exec tsc -p tsconfig.api.json && pnpm exec api-extractor run --local",
+    "lint:strict": "pnpm exec node ../../scripts/strict-lint.mjs ./oxlintrc.json",
+    "api:dts": "pnpm exec rimraf ./lib && pnpm exec tsc -p tsconfig.api.json && pnpm exec node ./api-build.mjs",
     "test": "pnpm exec vitest run"
   },
   "nx": {
@@ -37,7 +38,7 @@
           "command": "pnpm -F @vortex/renderer exec node ./dev.mjs"
         }
       },
-      "api": {
+      "api:dts": {
         "dependsOn": [
           "^build"
         ],
@@ -45,11 +46,10 @@
         "inputs": [
           "default",
           "typescript",
-          "{projectRoot}/api-extractor.json"
+          "{projectRoot}/api-build.mjs"
         ],
         "outputs": [
-          "{workspaceRoot}/packages/vortex-api/lib/api.d.ts",
-          "{workspaceRoot}/etc/vortex.api.md"
+          "{workspaceRoot}/packages/vortex-api/lib/api.d.ts"
         ]
       }
     }
@@ -62,6 +62,7 @@
     "@babel/preset-typescript": "catalog:",
     "@babel/register": "catalog:",
     "@electron/remote": "catalog:",
+    "@floating-ui/react": "catalog:",
     "@headlessui/react": "catalog:",
     "@hot-updater/bsdiff": "catalog:",
     "@mdi/js": "catalog:",
@@ -79,6 +80,7 @@
     "@opentelemetry/semantic-conventions": "catalog:",
     "@pmmmwh/react-refresh-webpack-plugin": "catalog:",
     "@tailwindcss/cli": "catalog:",
+    "@tanstack/react-virtual": "catalog:",
     "@testing-library/dom": "catalog:",
     "@testing-library/jest-dom": "catalog:",
     "@testing-library/react": "catalog:",
@@ -95,6 +97,7 @@
     "@types/encoding-down": "catalog:",
     "@types/fs-extra": "catalog:",
     "@types/graphlib": "catalog:",
+    "@types/js-yaml": "catalog:",
     "@types/json-socket": "catalog:",
     "@types/jsonwebtoken": "catalog:",
     "@types/lodash": "catalog:",
@@ -138,8 +141,10 @@
     "content-type": "catalog:",
     "crc-32": "catalog:",
     "csstype": "catalog:",
+    "cytoscape": "catalog:",
+    "cytoscape-cose-bilkent": "catalog:",
+    "cytoscape-edgehandles": "catalog:",
     "d3": "catalog:",
-    "date-fns": "catalog:",
     "dayjs": "catalog:",
     "dequal": "catalog:",
     "dnd-core": "catalog:",
@@ -148,7 +153,6 @@
     "electron": "catalog:",
     "electron-context-menu": "catalog:",
     "electron-redux": "catalog:",
-    "electron-updater": "catalog:",
     "encoding-down": "catalog:",
     "exe-version": "workspace:*",
     "feedparser": "catalog:",
@@ -157,17 +161,19 @@
     "glob": "catalog:",
     "graphlib": "catalog:",
     "happy-dom": "catalog:",
-    "icon-extract": "workspace:*",
     "i18next": "catalog:",
     "i18next-fs-backend": "catalog:",
+    "icon-extract": "workspace:*",
     "iconv-lite": "catalog:",
     "immutability-helper": "catalog:",
     "interweave": "catalog:",
     "is-admin": "catalog:",
     "json-loader": "catalog:",
     "json-socket": "catalog:",
+    "js-yaml": "catalog:",
     "jsonwebtoken": "catalog:",
     "lodash": "catalog:",
+    "markdown-ast": "catalog:",
     "memoize-one": "catalog:",
     "minimatch": "catalog:",
     "mixpanel-browser": "catalog:",
@@ -175,6 +181,7 @@
     "node-7z": "catalog:",
     "normalize-url": "catalog:",
     "numeral": "catalog:",
+    "p-limit": "catalog:",
     "p-queue": "catalog:",
     "packery": "catalog:",
     "permissions": "catalog:",
@@ -205,6 +212,7 @@
     "reselect": "catalog:",
     "resolve": "catalog:",
     "rimraf": "catalog:",
+    "rolldown-plugin-dts": "catalog:",
     "sass": "catalog:",
     "semver": "catalog:",
     "shortid": "catalog:",
@@ -212,6 +220,7 @@
     "source-map-support": "catalog:",
     "string-template": "catalog:",
     "tailwindcss": "catalog:",
+    "temporal-polyfill": "catalog:",
     "tmp": "catalog:",
     "turbowalk": "catalog:",
     "universal-analytics": "catalog:",
@@ -228,5 +237,8 @@
   },
   "dependencies": {
     "@cyclonedx/cyclonedx-library": "catalog:"
+  },
+  "optionalDependencies": {
+    "loot": "catalog:"
   }
 }

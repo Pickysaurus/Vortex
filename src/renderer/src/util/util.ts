@@ -659,6 +659,11 @@ function flattenInner(obj: any, key: string[], objStack: any[], options: IFlatte
   }, {});
 }
 
+/**
+ * @deprecated Wrap the call in a plain `new Promise` instead. This helper predates the typed
+ * `ApiEvents` registry and erases the callback signature, so the emit's arguments and result
+ * go unchecked.
+ */
 export function toPromise<ResT>(func: (cb) => void): Bluebird<ResT> {
   return new Bluebird((resolve, reject) => {
     const cb = (err: Error, res: ResT) => {
@@ -1062,7 +1067,6 @@ const noInheritEnv: string[] = [
   "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT",
   "FORCE_ALLOW_ELEVATED_SYMLINKING",
   "HIGHLIGHT_I18N",
-  "IS_PREVIEW_BUILD",
   "NEXUS_GAMES_URL",
   "NODE_ENV",
   "NODE_OPTIONS",

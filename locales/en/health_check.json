@@ -7,6 +7,7 @@
     "or": "Or"
   },
   "shared": {
+    "mod_may_be_required_for": "Missing mod may be required for: {{modName}}",
     "requires_files": "Requires {{ count }} additional mod file to be installed to work correctly:",
     "requires_files_plural": "Requires {{ count }} additional mod files to be installed to work correctly:",
     "requires_pick": "Requires {{ count }} additional mod file to be picked to work correctly:",
@@ -22,8 +23,19 @@
     "title": "Health Check",
     "subtitle": "Review your Loadout for any issues and learn how to resolve them if needed.",
     "last_updated": "Last updated: {{time}}",
+    "section": {
+      "warning": {
+        "title": "Warnings",
+        "description": "Issues that may stop parts of your loadout from working."
+      },
+      "suggestion": {
+        "title": "Suggestions",
+        "description": "Changes that may improve your loadout or add optional extras."
+      },
+      "collapse": "Collapse section",
+      "expand": "Expand section"
+    },
     "item": {
-      "title": "Additional mod file may be required for: {{modName}}",
       "description": "Missing mod: {{dependencyModName}}",
       "more_count": "+{{ count }} more",
       "missing_for": "Missing required mod for: {{modName}}",
@@ -36,6 +48,11 @@
     },
     "no_results_hidden": {
       "title": "No hidden items"
+    },
+    "no_results_logged_out": {
+      "title": "Additional checks available",
+      "message": "Health Check found no issues in the checks it could run. Log in to also check for missing Nexus Mods requirements.",
+      "action": "Log in to complete Health Check"
     },
     "external_mod_install": "External mod install",
     "install_one_click": "1-click install ({{count}})",
@@ -62,7 +79,6 @@
       "error": "Was this error helpful?"
     },
     "item": {
-      "title": "Possible missing required mod for: {{modName}}",
       "may_require_file": "May require this additional mod file to be installed to work correctly:",
       "author_note": "Author note: {{note}}",
       "mod_page_source_note": "This requirement was identified from the mod page rather than the file-level requirement system, so it may not be required for your specific configuration. <modLink>View the mod page to get full details</modLink>.",
@@ -73,6 +89,7 @@
       "missing_for": "Missing required mod for: <modLink>{{modName}}</modLink>",
       "missing_for_plural": "Missing required mods for: <modLink>{{modName}}</modLink>",
       "install_via_mod_page": "Install via mod page",
+      "view_mod_page": "View mod page",
       "install_one_click": "1-click install",
       "downloading": "Downloading...",
       "installing": "Installing...",
@@ -84,7 +101,11 @@
       "enable_required": "Enable required version",
       "view_in_mods": "View in Mods",
       "enable_this_version": "Enable this version",
-      "install_uninstalled": "Install (downloaded)"
+      "install_uninstalled": "Install (downloaded)",
+      "adult": "Adult",
+      "installed": "Installed",
+      "enabled": "Enabled",
+      "disabled": "Disabled"
     },
     "feedback_modal": {
       "title": "Thanks for letting us know",
@@ -99,6 +120,16 @@
         "cancel": "Skip",
         "confirm": "Send feedback"
       }
+    }
+  },
+  "author_notes_modal": {
+    "title": "Review mod author notes",
+    "description": "Some suggested mods have additional guidance from their authors and may not always be required.",
+    "prompt": "Review the notes below and choose which mods to install.",
+    "required_for": "For mods:",
+    "buttons": {
+      "cancel": "Cancel",
+      "install": "Install selected ({{count}})"
     }
   },
   "settings": {
@@ -127,7 +158,7 @@
       "buttons": {
         "primary": "Unlock 1-click installs",
         "secondary": {
-          "single": "Go to mod page (free)",
+          "single": "Install via mod page (free)",
           "all": "Return and open mod pages"
         }
       }

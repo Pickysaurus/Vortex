@@ -4,21 +4,21 @@
   "description": "Test for common problems with the Vortex setup itself",
   "scripts": {
     "build": "node build.mjs && pnpm extractInfo",
-    "typecheck": "pnpm tsc"
+    "typecheck": "pnpm tsc",
+    "lint:strict": "pnpm exec node ../../scripts/strict-lint.mjs"
   },
   "author": "Black Tree Gaming Ltd.",
   "license": "GPL-3.0",
   "devDependencies": {
     "7z-bin": "catalog:",
+    "@nexusmods/vortex-api": "workspace:*",
     "@types/bluebird": "catalog:",
-    "@types/i18next": "catalog:",
     "@types/node": "catalog:",
     "bluebird": "catalog:",
     "copyfiles": "catalog:",
     "i18next": "catalog:",
     "react-bootstrap": "catalog:",
     "turbowalk": "catalog:",
-    "@nexusmods/vortex-api": "workspace:*",
     "winapi-bindings": "catalog:"
   },
   "nx": {

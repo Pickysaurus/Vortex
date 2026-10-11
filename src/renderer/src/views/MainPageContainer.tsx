@@ -88,7 +88,13 @@ interface IErrorFallbackProps {
   onRetry: () => void;
 }
 
-const ErrorFallback: FC<IErrorFallbackProps> = ({ pageId, classes, error, errorInfo, onRetry }) => {
+const ErrorFallback: FC<React.PropsWithChildren<IErrorFallbackProps>> = ({
+  pageId,
+  classes,
+  error,
+  errorInfo,
+  onRetry,
+}) => {
   const { t } = useTranslation(["common"]);
   const context = useMainContext();
 
@@ -129,7 +135,11 @@ ComponentStack:
   );
 };
 
-export const MainPageContainer: React.FC<IBaseProps> = ({ page, active, secondary }) => {
+export const MainPageContainer: React.FC<React.PropsWithChildren<IBaseProps>> = ({
+  page,
+  active,
+  secondary,
+}) => {
   const { t } = useTranslation(["common"]);
   const [headerRef, setHeaderRef] = useState<HTMLElement | null>(null);
 
@@ -158,7 +168,10 @@ export const MainPageContainer: React.FC<IBaseProps> = ({ page, active, secondar
   let content: JSX.Element;
   try {
     const props = page.propsFunc();
-    if (page.newLayout) {
+    // Already resolved by PagesContext, so a page that decides for itself has had its
+    // say by now. Compared against `true` rather than tested for truth so an unresolved
+    // callback can't pass for a yes.
+    if (page.newLayout === true) {
       // Redesigned pages render their own Page, so we skip the legacy
       // `.main-page` / header / body-container chrome to keep the subtree flat.
       content = (

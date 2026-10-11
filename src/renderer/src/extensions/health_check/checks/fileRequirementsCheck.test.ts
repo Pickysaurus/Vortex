@@ -10,12 +10,15 @@ vi.mock("@/extensions/health_check/utils/fileRequirements/installedFiles", () =>
   makeInstalledFileHydrator: vi.fn(),
   makeDownloadedFileHydrator: vi.fn(),
 }));
-vi.mock("../../nexus_integration/nexusV3Client", () => ({
+vi.mock("@/extensions/nexus_integration/nexusV3Client", () => ({
   createVortexNexusV3Client: vi.fn(),
 }));
-vi.mock("../../nexus_integration/selectors", () => ({ isLoggedIn: vi.fn() }));
-vi.mock("../../profile_management/selectors", () => ({ activeProfile: vi.fn() }));
-vi.mock("../../../logging", () => ({ log: vi.fn() }));
+vi.mock("@/extensions/nexus_integration/selectors", () => ({ isLoggedIn: vi.fn() }));
+vi.mock("@/extensions/profile_management/selectors", () => ({ activeProfile: vi.fn() }));
+// mapRequirementsReport compares against this to drop Vortex-targeting dependencies;
+// the real module pulls in a heavy selector chain this test has no use for.
+vi.mock("@/extensions/nexus_integration/util/UIDs", () => ({ VORTEX_MOD_UID: "vortex-mod-uid" }));
+vi.mock("@/logging", () => ({ log: vi.fn() }));
 
 import {
   gatherDownloadedFileRefs,
@@ -26,12 +29,12 @@ import {
   type IInstalledFile,
   type IInstalledFileRef,
 } from "@/extensions/health_check/utils/fileRequirements/installedFiles";
+import { createVortexNexusV3Client } from "@/extensions/nexus_integration/nexusV3Client";
+import { isLoggedIn } from "@/extensions/nexus_integration/selectors";
+import { activeProfile } from "@/extensions/profile_management/selectors";
+import type { IProfile } from "@/extensions/profile_management/types/IProfile";
+import type { IExtensionApi } from "@/types/IExtensionContext";
 
-import type { IExtensionApi } from "../../../types/IExtensionContext";
-import { createVortexNexusV3Client } from "../../nexus_integration/nexusV3Client";
-import { isLoggedIn } from "../../nexus_integration/selectors";
-import { activeProfile } from "../../profile_management/selectors";
-import type { IProfile } from "../../profile_management/types/IProfile";
 import type { IFileRequirementsCheckMetadata } from "../utils/fileRequirements/mapRequirementsReport";
 import { checkFileRequirements } from "./fileRequirementsCheck";
 
@@ -701,5 +704,47 @@ describe("checkFileRequirements / resolution", () => {
       uninstalledFile: { fileUID: "su_correct" },
       enabledFile: { fileUID: "su_wrong", enabled: true },
     });
+  });
+});
+
+describe("checkFileRequirements / abort", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockActiveProfile.mockReturnValue({ gameId: "skyrimse" } as unknown as IProfile);
+    mockIsLoggedIn.mockReturnValue(true);
+    mockGatherDownloaded.mockResolvedValue([]);
+    mockDownloadedHydrator.mockReturnValue(() => undefined);
+  });
+
+  // Cancelling a request already in flight is the v3 client's job and is covered there. What
+  // matters here is that an aborted run leaves no report for the registry to store.
+  test("throws instead of returning a result when the signal is already aborted", async () => {
+    mockGather.mockResolvedValue([ref("ab_src")]);
+    mockHydrator.mockReturnValue((fileUID: string) => installedFile(fileUID, true));
+    mockCreateClient.mockReturnValue(
+      fakeClient(
+        { ab_src: { chain: "ab_srcChain", modId: "ab_srcMod" } },
+        [],
+      ) as unknown as ReturnType<typeof createVortexNexusV3Client>,
+    );
+
+    await expect(checkFileRequirements(api, AbortSignal.abort())).rejects.toThrow();
+  });
+
+  test("throws when the signal aborts partway through the run", async () => {
+    const controller = new AbortController();
+    mockGather.mockImplementation(() => {
+      controller.abort();
+      return Promise.resolve([ref("ab2_src")]);
+    });
+    mockHydrator.mockReturnValue((fileUID: string) => installedFile(fileUID, true));
+    mockCreateClient.mockReturnValue(
+      fakeClient(
+        { ab2_src: { chain: "ab2_srcChain", modId: "ab2_srcMod" } },
+        [],
+      ) as unknown as ReturnType<typeof createVortexNexusV3Client>,
+    );
+
+    await expect(checkFileRequirements(api, controller.signal)).rejects.toThrow();
   });
 });

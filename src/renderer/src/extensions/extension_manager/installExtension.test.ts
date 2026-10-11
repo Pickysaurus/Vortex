@@ -9,7 +9,6 @@ import { DataInvalid } from "../../util/CustomErrors";
 import {
   clearStaleRemovalFlags,
   validateExtension,
-  validateInstall,
   validateTheme,
   validateTranslation,
 } from "./installExtension";
@@ -65,11 +64,11 @@ describe("clearStaleRemovalFlags", () => {
     const api = {
       store: {
         dispatch,
-        getState: () => ({
-          session: { extensions: { available: [] } },
-          app: { extensions: extState },
-        }),
       },
+      getState: () => ({
+        session: { extensions: { available: [] } },
+        app: { extensions: extState },
+      }),
     } as unknown as IExtensionApi;
     return { api, dispatch };
   };
@@ -275,8 +274,8 @@ describe("validate* extension install checks", () => {
     const extPath = path.join("mock", "translation-ext");
 
     it("throws when there are no locale-like subdirectories", async () => {
-      // "docs" isn't a well-formed BCP-47 tag, so Date#toLocaleString rejects
-      // it and isLocaleCode filters it out entirely.
+      // "docs" isn't a well-formed BCP-47 tag, so isValidBcp47 rejects it and
+      // the filter removes it.
       mockDirTree({ [extPath]: [dir("docs"), file("readme.txt")] });
       await expect(validateTranslation(extPath)).rejects.toThrow(
         "Expected exactly one language subdirectory",
@@ -299,15 +298,39 @@ describe("validate* extension install checks", () => {
       await expect(validateTranslation(extPath)).resolves.toBeUndefined();
     });
 
-    it("throws 'Directory isn't a language code' for an unrecognized language", async () => {
-      // well-formed enough for Date#toLocaleString, but not a real language code
+    it("treats a private-use tag as not a language code", async () => {
+      // "xx" is well-formed BCP-47 but isValidBcp47 rejects it, so it is
+      // filtered out and we report the same error as the empty case.
       mockDirTree({ [extPath]: [dir("xx")] });
-      await expect(validateTranslation(extPath)).rejects.toThrow("Directory isn't a language code");
+      await expect(validateTranslation(extPath)).rejects.toThrow(
+        "Expected exactly one language subdirectory",
+      );
     });
 
-    it("throws 'Directory isn't a language code' for a valid language with an invalid country", async () => {
+    it("treats a known language with an unknown region as not a language code", async () => {
+      // "en-XX" is structurally fine, but isValidBcp47 rejects unknown regions.
       mockDirTree({ [extPath]: [dir("en-XX")] });
-      await expect(validateTranslation(extPath)).rejects.toThrow("Directory isn't a language code");
+      await expect(validateTranslation(extPath)).rejects.toThrow(
+        "Expected exactly one language subdirectory",
+      );
+    });
+
+    it("accepts a script subtag (zh-Hans)", async () => {
+      const langDir = path.join(extPath, "zh-Hans");
+      mockDirTree({
+        [extPath]: [dir("zh-Hans")],
+        [langDir]: [file("strings.json")],
+      });
+      await expect(validateTranslation(extPath)).resolves.toBeUndefined();
+    });
+
+    it("accepts a script subtag with a region (zh-Hant-CN)", async () => {
+      const langDir = path.join(extPath, "zh-Hant-CN");
+      mockDirTree({
+        [extPath]: [dir("zh-Hant-CN")],
+        [langDir]: [file("strings.json")],
+      });
+      await expect(validateTranslation(extPath)).resolves.toBeUndefined();
     });
 
     it("throws 'No translation files' when the language directory has no json files", async () => {
@@ -326,92 +349,6 @@ describe("validate* extension install checks", () => {
         [langDir]: [file("strings.json")],
       });
       await expect(validateTranslation(extPath)).resolves.toBeUndefined();
-    });
-  });
-
-  describe("validateInstall", () => {
-    const extPath = path.join("mock", "install-ext");
-    const baseInfo: Omit<IExtension, "type"> = {
-      name: "some-extension",
-      author: "someone",
-      description: "a description",
-      version: "1.0.0",
-    };
-
-    it("delegates to theme validation when info.type is 'theme'", async () => {
-      const themeDir = path.join(extPath, "default");
-      mockDirTree({
-        [extPath]: [dir("default")],
-        [themeDir]: [file("variables.scss")],
-      });
-      const info: IExtension = { ...baseInfo, type: "theme" };
-      await expect(validateInstall(extPath, info)).resolves.toBe("theme");
-      expect(statMock).not.toHaveBeenCalled();
-    });
-
-    it("propagates theme validation failures when info.type is 'theme'", async () => {
-      mockDirTree({ [extPath]: [] });
-      const info: IExtension = { ...baseInfo, type: "theme" };
-      await expect(validateInstall(extPath, info)).rejects.toThrow(DataInvalid);
-    });
-
-    it("delegates to translation validation when info.type is 'translation'", async () => {
-      const langDir = path.join(extPath, "en");
-      mockDirTree({
-        [extPath]: [dir("en")],
-        [langDir]: [file("strings.json")],
-      });
-      const info: IExtension = { ...baseInfo, type: "translation" };
-      await expect(validateInstall(extPath, info)).resolves.toBe("translation");
-    });
-
-    it("only runs validateExtension (no fallback) when info is defined with another type", async () => {
-      statMock.mockResolvedValue({} as never);
-      const info: IExtension = { ...baseInfo, type: "game" };
-      await expect(validateInstall(extPath, info)).resolves.toBe("game");
-      expect(readdirMock).not.toHaveBeenCalled();
-    });
-
-    it("rejects without falling back to theme/translation when info is defined but validation fails", async () => {
-      statMock.mockRejectedValue(new Error("ENOENT"));
-      const info: IExtension = { ...baseInfo };
-      await expect(validateInstall(extPath, info)).rejects.toThrow("ENOENT");
-      expect(readdirMock).not.toHaveBeenCalled();
-    });
-
-    it("returns undefined type when info is undefined and the extension validates directly", async () => {
-      statMock.mockResolvedValue({} as never);
-      await expect(validateInstall(extPath, undefined)).resolves.toBeUndefined();
-      expect(readdirMock).not.toHaveBeenCalled();
-    });
-
-    it("falls back to theme validation when info is undefined and extension validation fails", async () => {
-      statMock.mockRejectedValue(new Error("ENOENT"));
-      const themeDir = path.join(extPath, "default");
-      mockDirTree({
-        [extPath]: [dir("default")],
-        [themeDir]: [file("style.scss")],
-      });
-      await expect(validateInstall(extPath, undefined)).resolves.toBe("theme");
-    });
-
-    it("falls back to translation validation when info is undefined and extension/theme validation fail", async () => {
-      statMock.mockRejectedValue(new Error("ENOENT"));
-      const langDir = path.join(extPath, "en");
-      mockDirTree({
-        [extPath]: [dir("en")],
-        // no theme stylesheet here, so theme validation fails and translation succeeds
-        [langDir]: [file("strings.json")],
-      });
-      await expect(validateInstall(extPath, undefined)).resolves.toBe("translation");
-    });
-
-    it("throws when info is undefined and none of extension/theme/translation validate", async () => {
-      statMock.mockRejectedValue(new Error("ENOENT"));
-      mockDirTree({ [extPath]: [] });
-      await expect(validateInstall(extPath, undefined)).rejects.toThrow(
-        "Doesn't seem to contain a correctly packaged extension, theme or translation",
-      );
     });
   });
 });

@@ -21,6 +21,7 @@ export const NoResults = ({
   appearance = "default",
   children,
   className,
+  iconClassName,
   iconPath,
   isError,
   message,
@@ -28,6 +29,7 @@ export const NoResults = ({
 }: PropsWithChildren<{
   appearance?: IAppearance;
   className?: string;
+  iconClassName?: string;
   iconPath?: string;
   isError?: boolean;
   message?: string;
@@ -37,7 +39,7 @@ export const NoResults = ({
     <div className="flex flex-col items-center gap-y-2">
       {(!!iconPath || isError) && (
         <Icon
-          className={getIconClassName(appearance)}
+          className={iconClassName ?? getIconClassName(appearance)}
           path={iconPath ?? mdiAlertCircleOutline}
           size="xl"
         />
@@ -59,7 +61,6 @@ export const NoResults = ({
             appearance="moderate"
             brand="neutral"
             leftIconPath={mdiOpenInNew}
-            size="sm"
             onClick={() =>
               window.api.shell.openUrl("https://help.nexusmods.com/article/125-contact-us")
             }

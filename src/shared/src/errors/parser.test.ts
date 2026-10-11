@@ -1,4 +1,4 @@
-import { assert, describe, expect, it, test } from "vitest";
+import { assert, describe, expect, expectTypeOf, it, test } from "vitest";
 
 import { VortexError } from "./base";
 import { parseError, parseNodeSystemErrorData } from "./parser";
@@ -16,10 +16,20 @@ function makeSystemError(
   });
 }
 
+/** How Node reports a dropped socket: a POSIX code, but no errno or syscall. */
+function socketHangUp(): Error {
+  return Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
+}
+
 describe("parseError", () => {
-  it("passes a VortexError through unchanged", () => {
+  it("passes a VortexError through unchanged, with data typed as the full union", () => {
     const original = new VortexError("already typed", { kind: "user-canceled", skipped: false });
-    expect(parseError(original)).toBe(original);
+    const parsed = parseError(original);
+
+    expect(parsed).toBe(original);
+    expectTypeOf(parsed.data).not.toBeAny();
+    assert(parsed.data.kind === "user-canceled");
+    expect(parsed.data.skipped).toBe(false);
   });
 
   test.for([
@@ -37,6 +47,7 @@ describe("parseError", () => {
       { code: "ENOENT", kind: "fs:not-found", path: "/missing" },
       { code: "EEXIST", kind: "fs:already-exists", path: "/existing" },
       { code: "ENOSPC", kind: "fs:no-space", path: "/dev/sda1" },
+      { code: "EROFS", kind: "fs:read-only", path: "/mnt/readonly/file" },
       { code: "ENOTDIR", kind: "fs:not-a-directory", path: "/not/a/dir" },
       { code: "EISDIR", kind: "fs:not-a-file", path: "/some/dir" },
       { code: "ENOTEMPTY", kind: "fs:directory-not-empty", path: "/non/empty" },
@@ -80,6 +91,65 @@ describe("parseError", () => {
     });
   });
 
+  describe("getMessage callback", () => {
+    it("overrides the message when callback returns a string", () => {
+      const err = makeSystemError("ENOENT", { path: "/missing" });
+      const result = parseError(err, undefined, ({ data }) => {
+        if (data.kind === "fs:not-found") return `Custom: ${data.path}`;
+        return undefined;
+      });
+      expect(result.message).toBe("Custom: /missing");
+    });
+
+    it("keeps the original message when callback returns undefined", () => {
+      const err = makeSystemError("ENOENT", { path: "/missing" });
+      const result = parseError(err, undefined, () => undefined);
+      expect(result.message).toBe("File or directory does not exist at '/missing'");
+    });
+
+    it("receives isTransient in the callback", () => {
+      const err = makeSystemError("EBUSY");
+      let capturedTransient: boolean | undefined;
+      parseError(err, undefined, ({ isTransient }) => {
+        capturedTransient = isTransient;
+        return undefined;
+      });
+      expect(capturedTransient).toBe(true);
+    });
+
+    it("is not called when passing a VortexError directly", () => {
+      let called = false;
+      const original = new VortexError("already typed", { kind: "user-canceled", skipped: false });
+      parseError(original, undefined, () => {
+        called = true;
+        return undefined;
+      });
+      expect(called).toBe(false);
+    });
+
+    it("can access narrowed payload fields via kind check", () => {
+      const err = makeSystemError("ENOENT", { path: "/my/file" });
+      const result = parseError(err, undefined, ({ data }) => {
+        if (data.kind === "fs:not-found") {
+          return `Deleted ${data.path} via syscall ${data.syscall}`;
+        }
+        return undefined;
+      });
+      expect(result.message).toBe("Deleted /my/file via syscall open");
+    });
+
+    it("works with context and getMessage together", () => {
+      const err = makeSystemError("ENOENT", { path: "/error/path" });
+      const result = parseError(err, { path: "/context/path" }, ({ data }) => {
+        if (data.kind === "fs:not-found") return `Context path: ${data.path}`;
+        return undefined;
+      });
+      assert(result.data.kind === "fs:not-found");
+      expect(result.data.path).toBe("/context/path");
+      expect(result.message).toBe("Context path: /context/path");
+    });
+  });
+
   describe("network codes", () => {
     const url = "https://api.nexusmods.com/v1/games";
 
@@ -105,6 +175,30 @@ describe("parseError", () => {
         assert(result.data.kind === "os:generic");
         expect(result.isTransient).toBe(isTransient);
       });
+    });
+
+    describe("ECONNRESET without errno/syscall (socket hang up, TLS disconnect)", () => {
+      it("with URL -> http:generic", () => {
+        const result = parseError(socketHangUp(), { url });
+        assert(result.data.kind === "http:generic");
+        expect(result.data.url).toBe(url);
+        expect(result.data.originalCode).toBe("ECONNRESET");
+      });
+
+      it("without URL -> os:generic, keeping the message", () => {
+        const result = parseError(socketHangUp());
+        assert(result.data.kind === "os:generic");
+        expect(result.data.originalCode).toBe("ECONNRESET");
+        expect(result.message).toBe("socket hang up");
+      });
+
+      test.for([{ code: "ERR_SOMETHING" }, { code: "ETIMEDOUT" }])(
+        "any other code without errno/syscall ($code) is still unknown",
+        ({ code }) => {
+          const result = parseError(Object.assign(new Error("boom"), { code }));
+          assert(result.data.kind === "unknown");
+        },
+      );
     });
   });
 });

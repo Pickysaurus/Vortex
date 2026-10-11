@@ -1,12 +1,16 @@
 import { z } from "../zodJitless";
-import { VortexError } from "./base";
+import { VortexError, type VortexErrorKindMap } from "./base";
 
 /**
  * Tries to parse the input as an error.
  *
  * @public
  * */
-export function parseError(cause: unknown, context?: { path?: string; url?: string }): VortexError {
+export function parseError(
+  cause: unknown,
+  context?: { path?: string; url?: string },
+  getMessage?: (values: { data: VortexError["data"]; isTransient: boolean }) => string | undefined,
+): VortexError {
   if (cause instanceof VortexError) return cause;
 
   if (!(cause instanceof Error)) {
@@ -21,13 +25,18 @@ export function parseError(cause: unknown, context?: { path?: string; url?: stri
   }
 
   const parsedSystemError = parseNodeSystemError(cause, context);
-  if (parsedSystemError) return parsedSystemError;
+  if (!parsedSystemError) {
+    return new VortexError(
+      `Unknown error thrown: ${cause.name} ${cause.message}`,
+      { kind: "unknown" },
+      { cause },
+    );
+  }
 
-  return new VortexError(
-    `Unknown error thrown: ${cause.name} ${cause.message}`,
-    { kind: "unknown" },
-    { cause },
-  );
+  const { message: originalMessage, data, isTransient } = parsedSystemError;
+  const message =
+    getMessage?.({ data: { ...data }, isTransient: isTransient ?? false }) ?? originalMessage;
+  return new VortexError(message, data, { cause, isTransient: isTransient ?? false });
 }
 
 /** POSIX codes for network-level failures. */
@@ -44,10 +53,17 @@ const NETWORK_POSIX_CODES = new Set([
 function parseNodeSystemError(
   cause: Error,
   context?: { path?: string; url?: string },
-): VortexError | undefined {
+): { message: string; data: VortexError["data"]; isTransient?: boolean } | undefined {
   const data = parseNodeSystemErrorData(cause);
   if (!data) {
-    return undefined;
+    // Node reports a peer closing the socket with a plain Error carrying only `code: "ECONNRESET"`,
+    // no errno or syscall: "socket hang up" from the http client and the TLS wrap's onerror.
+    // https://github.com/nodejs/node/blob/51c992f99bc0ec6dc1cafdc9f00defa28eead3ea/lib/internal/errors.js#L847-L856
+    // https://github.com/nodejs/node/blob/51c992f99bc0ec6dc1cafdc9f00defa28eead3ea/lib/internal/tls/wrap.js#L1361-L1366
+    const code = "code" in cause ? cause.code : undefined;
+    return code === "ECONNRESET"
+      ? networkError({ originalCode: code }, cause.message, context)
+      : undefined;
   }
 
   const { code: originalCode, errno, syscall } = data;
@@ -65,79 +81,87 @@ function parseNodeSystemError(
     // NOTE(erri120): EACCES and EPERM are not FS-exclusive codes, if we don't have a path we
     // must not default to an FS error.
     if (hasPath) {
-      return new VortexError(message, { kind: "fs:no-permissions", ...osData, path }, { cause });
+      return { message, data: { kind: "fs:no-permissions", ...osData, path } };
     }
   } else if (originalCode === "ENOENT") {
     // ENOENT: No such file or directory (POSIX.1-2001).
-    return new VortexError(
-      `File or directory does not exist at '${path}'`,
-      { kind: "fs:not-found", ...osData, path },
-      { cause },
-    );
+    return {
+      message: `File or directory does not exist at '${path}'`,
+      data: { kind: "fs:not-found", ...osData, path },
+    };
   } else if (originalCode === "EEXIST") {
     // EEXIST: File exists (POSIX.1-2001).
-    return new VortexError(
-      `File at '${path}' already exists`,
-      { kind: "fs:already-exists", ...osData, path },
-      { cause },
-    );
+    return {
+      message: `File at '${path}' already exists`,
+      data: { kind: "fs:already-exists", ...osData, path },
+    };
+  } else if (originalCode === "EROFS") {
+    // EROFS: Read-only filesystem (POSIX.1-2001).
+    return {
+      message: `Filesystem is read-only: '${path}'`,
+      data: { kind: "fs:read-only", ...osData, path },
+    };
   } else if (originalCode === "ENOSPC") {
     // ENOSPC: No space left on device (POSIX.1-2001)
-    return new VortexError(
-      `No space left on device: '${path}'`,
-      { kind: "fs:no-space", ...osData, path },
-      { cause },
-    );
+    return {
+      message: `No space left on device: '${path}'`,
+      data: { kind: "fs:no-space", ...osData, path },
+    };
   } else if (originalCode === "ENOTDIR") {
     // ENOTDIR: Not a directory (POSIX.1-2001).
-    return new VortexError(
-      `Path is not a directory: '${path}'`,
-      { kind: "fs:not-a-directory", ...osData, path },
-      { cause },
-    );
+    return {
+      message: `Path is not a directory: '${path}'`,
+      data: { kind: "fs:not-a-directory", ...osData, path },
+    };
   } else if (originalCode === "EISDIR") {
     // EISDIR: Is a directory (POSIX.1-2001).
-    return new VortexError(
-      `Path is not a file: '${path}'`,
-      { kind: "fs:not-a-file", ...osData, path },
-      { cause },
-    );
+    return {
+      message: `Path is not a file: '${path}'`,
+      data: { kind: "fs:not-a-file", ...osData, path },
+    };
   } else if (originalCode === "ENOTEMPTY") {
     // ENOTEMPTY: Directory not empty (POSIX.1-2001).
-    return new VortexError(
-      `Directory is not empty: '${path}'`,
-      { kind: "fs:directory-not-empty", ...osData, path },
-      { cause },
-    );
+    return {
+      message: `Directory is not empty: '${path}'`,
+      data: { kind: "fs:directory-not-empty", ...osData, path },
+    };
   } else if (originalCode === "EMFILE") {
     // EMFILE: Too many open files (POSIX.1-2001).
-    return new VortexError(
+    return {
       message,
-      { kind: "os:generic", ...osData },
-      { cause, isTransient: true },
-    );
+      data: { kind: "os:generic", ...osData },
+      isTransient: true,
+    };
   } else if (originalCode === "EBUSY") {
     // EBUSY: Device or resource busy (POSIX.1-2001)
-    return new VortexError(
+    return {
       message,
-      { kind: "os:generic", ...osData },
-      { cause, isTransient: true },
-    );
+      data: { kind: "os:generic", ...osData },
+      isTransient: true,
+    };
   } else if (NETWORK_POSIX_CODES.has(originalCode)) {
-    const isTransient = originalCode === "ETIMEDOUT";
-
-    if (context?.url !== undefined) {
-      return new VortexError(
-        `Network error (${originalCode}) for '${context.url}': ${message}`,
-        { kind: "http:generic", url: context.url, ...osData },
-        { cause, isTransient },
-      );
-    }
-
-    return new VortexError(message, { kind: "os:generic", ...osData }, { cause, isTransient });
+    return networkError(osData, message, context);
   }
 
-  return new VortexError(message, { kind: "os:generic", ...osData }, { cause });
+  return { message, data: { kind: "os:generic", ...osData } };
+}
+
+function networkError(
+  osData: VortexErrorKindMap["os:generic"],
+  message: string,
+  context?: { path?: string; url?: string },
+): { message: string; data: VortexError["data"]; isTransient: boolean } {
+  const isTransient = osData.originalCode === "ETIMEDOUT";
+
+  if (context?.url !== undefined) {
+    return {
+      message: `Network error (${osData.originalCode}) for '${context.url}': ${message}`,
+      data: { kind: "http:generic", url: context.url, ...osData },
+      isTransient,
+    };
+  }
+
+  return { message, data: { kind: "os:generic", ...osData }, isTransient };
 }
 
 export function parseNodeSystemErrorData(input: unknown): NodeSystemErrorData | undefined {

@@ -5,13 +5,14 @@
   "scripts": {
     "_assets": "copyfiles -u 1 -f src/style.scss dist",
     "build": "node build.mjs && pnpm run _assets && pnpm extractInfo",
-    "typecheck": "pnpm tsc"
+    "typecheck": "pnpm tsc",
+    "lint:strict": "pnpm exec node ../../scripts/strict-lint.mjs"
   },
   "author": "Black Tree Gaming Ltd.",
   "license": "GPL-3.0",
   "devDependencies": {
     "7z-bin": "catalog:",
-    "@types/i18next": "catalog:",
+    "@nexusmods/vortex-api": "workspace:*",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
@@ -21,8 +22,7 @@
     "i18next": "catalog:",
     "react": "catalog:",
     "react-bootstrap": "catalog:",
-    "turbowalk": "catalog:",
-    "@nexusmods/vortex-api": "workspace:*"
+    "turbowalk": "catalog:"
   },
   "nx": {
     "tags": [

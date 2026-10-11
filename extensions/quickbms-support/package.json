@@ -1,10 +1,11 @@
 {
   "name": "quickbms-support",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "QuickBMS extractor support",
   "scripts": {
     "build": "node build.mjs && node download_dependencies.js && pnpm extractInfo",
-    "typecheck": "pnpm tsc"
+    "typecheck": "pnpm tsc",
+    "lint:strict": "pnpm exec node ../../scripts/strict-lint.mjs"
   },
   "author": "Black Tree Gaming Ltd.",
   "license": "GPL-3.0",
@@ -14,8 +15,8 @@
     "extensionName": "QuickBMS Support"
   },
   "devDependencies": {
+    "@nexusmods/vortex-api": "workspace:*",
     "@types/bluebird": "catalog:",
-    "@types/i18next": "catalog:",
     "@types/react": "catalog:",
     "@types/redux": "catalog:",
     "bluebird": "catalog:",
@@ -24,8 +25,7 @@
     "i18next": "catalog:",
     "node-7z": "catalog:",
     "react": "catalog:",
-    "react-i18next": "catalog:",
-    "@nexusmods/vortex-api": "workspace:*"
+    "react-i18next": "catalog:"
   },
   "nx": {
     "tags": [

@@ -6,17 +6,22 @@
   "type": "commonjs",
   "packageManager": "pnpm@11.10.0+sha512.0b7f8b98060031904c017e3a41eb187a16d40eeb829b95c4f8cb03681761fc4ab53dd219115b9b447f4dce1a05a214764461e7d3703392a9f32f9511ce8c86c8",
   "engines": {
-    "node": "24.17.0"
+    "node": "24.20.0",
+    "runtime": {
+      "name": "node",
+      "version": "24.20.0",
+      "onFail": "download"
+    }
   },
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": "24.17.0",
+      "version": "24.20.0",
       "onFail": "download"
     }
   },
   "volta": {
-    "node": "24.17.0",
+    "node": "24.20.0",
     "yarn": "1.22.19"
   },
   "scripts": {
@@ -32,7 +37,8 @@
     "lint": "pnpm nx run-many -t lint",
     "lint:verbose": "pnpm nx run-many -t lint:verbose",
     "test": "pnpm nx run-many -t test test:integration --exclude @vortex/e2e",
-    "api": "pnpm nx run vortex-api:build",
+    "verify": "echo pnpm run format && pnpm run format && echo pnpm run build && pnpm run build && echo pnpm run test && pnpm run test",
+    "api": "pnpm nx run @nexusmods/vortex-api:build",
     "format": "pnpm oxfmt",
     "format:check": "pnpm oxfmt --check",
     "format:staged": "git diff --name-only --cached | xargs --no-run-if-empty pnpm oxfmt",
@@ -45,9 +51,7 @@
   "lint-staged": {
     "*": "pnpm exec oxfmt --no-error-on-unmatched-pattern"
   },
-  "dependencies": {
-    "node": "catalog:"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@eslint-react/eslint-plugin": "catalog:",
     "@eslint/js": "catalog:",
@@ -74,6 +78,7 @@
     "husky": "catalog:",
     "lint-staged": "catalog:",
     "minimist": "catalog:",
+    "node-abi": "catalog:",
     "nx": "catalog:",
     "oxfmt": "catalog:",
     "oxlint": "catalog:",

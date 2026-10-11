@@ -10,7 +10,7 @@ import { Typography } from "@/ui/components/typography/Typography";
 
 import { Button, type IButtonAppearance, type IButtonBrand } from "./Button";
 
-const BRANDS: IButtonBrand[] = ["primary", "info", "neutral", "success", "premium"];
+const BRANDS: IButtonBrand[] = ["primary", "info", "neutral", "success", "danger", "premium"];
 const APPEARANCES: IButtonAppearance[] = ["strong", "moderate", "subdued", "weak"];
 
 const titleCase = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
@@ -69,15 +69,41 @@ export const ButtonDemo = () => {
 
       <div className="space-y-4">
         <Typography as="h3" typographyType="heading-xs">
+          Scrim
+        </Typography>
+
+        <Typography appearance="subdued" typographyType="body-sm">
+          Neutral only, and outside the matrix above: it paints its own scrim so the button holds
+          over artwork whatever the theme, which is why it is shown on a bright ground.
+        </Typography>
+
+        <div className="flex flex-wrap items-center gap-4 rounded-sm bg-surface-inverted p-3">
+          <Button appearance="scrim" brand="neutral">
+            Scrim
+          </Button>
+
+          <Button
+            appearance="scrim"
+            aria-label="Scrim icon only"
+            brand="neutral"
+            leftIconPath={mdiCog}
+          />
+
+          <Button appearance="scrim" brand="neutral" disabled={true}>
+            Disabled
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <Typography as="h3" typographyType="heading-xs">
           Sizes
         </Typography>
 
         <div className="flex flex-wrap items-center gap-4">
-          <Button size="md">Medium</Button>
+          <Button>Medium (default)</Button>
 
           <Button size="sm">Small</Button>
-
-          <Button size="xs">Extra Small</Button>
         </div>
       </div>
 
@@ -123,7 +149,7 @@ export const ButtonDemo = () => {
             Next
           </Button>
 
-          <Button brand="success" leftIconPath={mdiCheck} size="sm">
+          <Button brand="success" leftIconPath={mdiCheck}>
             Confirm
           </Button>
 
@@ -154,11 +180,9 @@ export const ButtonDemo = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-4">
-          <Button aria-label="Settings (md)" leftIconPath={mdiCog} size="md" />
+          <Button aria-label="Settings (md)" leftIconPath={mdiCog} />
 
           <Button aria-label="Settings (sm)" leftIconPath={mdiCog} size="sm" />
-
-          <Button aria-label="Settings (xs)" leftIconPath={mdiCog} size="xs" />
         </div>
       </div>
     </div>

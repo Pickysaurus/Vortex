@@ -1,7 +1,7 @@
-import { render, cleanup } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import React from "react";
 import { useSelector } from "react-redux";
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { AdultAwareImage } from "./AdultAwareImage";
 
@@ -26,34 +26,30 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-afterEach(() => {
-  cleanup();
-});
-
 // --- Tests ---
 
 describe("AdultAwareImage", () => {
   it("blurs adult content when the user opts into blurring", () => {
     mockUserInfo({ adultBlurImages: true });
     renderComponent();
-    expect(getImg()).toHaveClass("blur-xl");
+    expect(getImg()).toHaveClass("nxm-image-media-blurred");
   });
 
   it("does not blur adult content when the user opts out", () => {
     mockUserInfo({ adultBlurImages: false });
     renderComponent();
-    expect(getImg()).not.toHaveClass("blur-xl");
+    expect(getImg()).not.toHaveClass("nxm-image-media-blurred");
   });
 
   it("never blurs non-adult content", () => {
     mockUserInfo({ adultBlurImages: true });
     renderComponent({ isAdult: false });
-    expect(getImg()).not.toHaveClass("blur-xl");
+    expect(getImg()).not.toHaveClass("nxm-image-media-blurred");
   });
 
   it("blurs adult content by default when no user is logged in", () => {
     mockUserInfo(undefined);
     renderComponent();
-    expect(getImg()).toHaveClass("blur-xl");
+    expect(getImg()).toHaveClass("nxm-image-media-blurred");
   });
 });

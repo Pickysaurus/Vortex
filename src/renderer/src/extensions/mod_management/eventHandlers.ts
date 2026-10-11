@@ -1,6 +1,11 @@
 import * as path from "path";
 
-import { getErrorCode, getErrorMessageOrDefault, unknownToError } from "@vortex/shared";
+import {
+  getErrorCode,
+  getErrorMessageOrDefault,
+  unknownToError,
+  VortexError,
+} from "@vortex/shared";
 import * as _ from "lodash";
 import type { RuleType } from "modmeta-db";
 
@@ -54,11 +59,13 @@ import {
 } from "./util/activationStore";
 import allTypesSupported from "./util/allTypesSupported";
 import { genSubDirFunc, purgeMods } from "./util/deploy";
+import { reportRecordedFailures, resetDeploymentFailures } from "./util/deploymentFailures";
 import {
   getCurrentActivator,
   getSelectedActivator,
   getSupportedActivators,
 } from "./util/deploymentMethods";
+import { dropMissingMods } from "./util/dropMissingMods";
 import modName from "./util/modName";
 import queryGameId from "./util/queryGameId";
 import refreshMods from "./util/refreshMods";
@@ -481,13 +488,7 @@ export function onGameModeActivated(
         (mod: IMod) => {
           api.store.dispatch(addMod(gameId, mod));
         },
-        (modNames: string[]) => {
-          modNames.forEach((name: string) => {
-            if (["downloaded", "installed"].indexOf(knownMods[name].state) !== -1) {
-              api.store.dispatch(removeMod(gameId, name));
-            }
-          });
-        },
+        (modNames: string[]) => dropMissingMods(api, gameId, knownMods, modNames),
       ),
     )
     .then(() => {
@@ -497,7 +498,13 @@ export function onGameModeActivated(
     .catch((err: Error) => {
       if (err instanceof UserCanceled) return undefined;
       if (err instanceof ProcessCanceled) {
-        log("warn", "Failed to refresh mods", err.message);
+        log("warn", "Failed to refresh mods", getErrorMessageOrDefault(err));
+        return;
+      }
+      if (err instanceof VortexError && err.data.kind === "fs:not-found") {
+        // reconciling against a folder Vortex can't see would list every mod as
+        // removed, so reconciliation is skipped
+        showError(store.dispatch, "Staging folder is not available", err, { allowReport: false });
         return;
       }
       const error: any = err as any;
@@ -517,23 +524,23 @@ export function onPathsChanged(
   const profile = activeProfile(state);
   const gameMode = profile?.gameId;
   if (gameMode !== undefined && previous[gameMode] !== current[gameMode]) {
-    const knownMods = state.persistent.mods[gameMode];
+    const knownMods = state.persistent.mods[gameMode] ?? {};
     refreshMods(
       api,
       gameMode,
       installPath(state),
-      knownMods || {},
+      knownMods,
       (mod: IMod) => store.dispatch(addMod(gameMode, mod)),
-      (modNames: string[]) => {
-        modNames.forEach((name: string) => {
-          if (["downloaded", "installed"].indexOf(knownMods[name].state) !== -1) {
-            store.dispatch(removeMod(gameMode, name));
-          }
-        });
-      },
+      (modNames: string[]) => dropMissingMods(api, gameMode, knownMods, modNames),
     )
       .then(() => updateDeploymentMethod(api, profile))
       .catch((err: Error) => {
+        if (err instanceof VortexError && err.data.kind === "fs:not-found") {
+          showError(store.dispatch, "Staging folder is not available", err, {
+            allowReport: false,
+          });
+          return;
+        }
         showError(store.dispatch, "Failed to refresh mods", err, {
           allowReport: !(err instanceof UserCanceled),
         });
@@ -656,6 +663,8 @@ async function undeploy(
     return prev;
   }, {});
 
+  resetDeploymentFailures(api, gameMode);
+
   try {
     await Promise.all(
       Object.keys(byModTypes).map(async (typeId) => {
@@ -703,6 +712,7 @@ async function undeploy(
         );
       }),
     );
+    reportRecordedFailures(api, gameMode);
   } finally {
     log("debug", "done undeploying single mod", {
       game: gameMode,
@@ -808,7 +818,12 @@ export function onRemoveMods(
   const installationPath = installPathForGame(state, gameId);
 
   const mods = state.persistent.mods[gameId];
-  const removeMods: IMod[] = modIds.map((modId) => mods[modId]).filter((mod) => mod !== undefined);
+  // removal keys off mod.id, so take it from the map key, which is the modId by
+  // definition. A record whose id leaf was lost to a partial write could
+  // otherwise never be removed (GH#23981).
+  const removeMods: IMod[] = modIds
+    .filter((modId) => mods[modId] !== undefined)
+    .map((modId) => ({ ...mods[modId], id: modId }));
 
   // TODO: no indication anything is happening until undeployment was successful.
   //   we used to remove the mod right away but then if undeployment failed the mod was gone

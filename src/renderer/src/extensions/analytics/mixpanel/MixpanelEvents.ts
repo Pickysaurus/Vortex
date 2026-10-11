@@ -35,36 +35,251 @@ export function mapPlatformToMixpanel(platform: string): string {
  * @param os Operating system (Node.js platform string: win32, darwin, linux)
  * @param os_version Operating system version (e.g., "10.0.22000" for Windows 11)
  * @param architecture CPU architecture (e.g., "x64", "arm64")
+ * @param is_legacy_ui True when the session is running the legacy (classic) UI rather than the modern one
+ * @param update_channel The update channel the session runs on (stable, beta, none)
  */
 export class AppLaunchedEvent implements MixpanelEvent {
   readonly eventName = "app_launched";
   readonly properties: Record<string, any>;
 
-  constructor(os: string, os_version?: string, architecture?: string) {
+  constructor(
+    os: string,
+    os_version?: string,
+    architecture?: string,
+    is_legacy_ui?: boolean,
+    update_channel?: string,
+    zoom_percent?: number,
+    is_hidpi?: boolean,
+  ) {
     this.properties = {
       $os: mapPlatformToMixpanel(os), // Override auto-detected OS for accuracy
       $os_version: os_version, // Not auto-tracked by mixpanel-browser
       architecture, // Custom property for CPU architecture
+      is_legacy_ui, // Custom property for which UI the session is running
+      // the population denominator for the app_update_* funnel
+      update_channel,
+      // The zoom level this session is actually running at, not just a change event —
+      // answers "what do people settle on" without the noise of every intermediate step.
+      zoom_percent,
+      // Whether this session's display is above the app's HiDPI threshold — lets zoom
+      // usage be cross-referenced against display density.
+      is_hidpi,
     };
   }
 }
 
 /**
- * DNU - NEEDS TO BE FIRED BEFORE ANALYTICS ARE INITIALIZED
- * Event sent when the application is updated.
- * @param from_version Previous version
- * @param to_version New version
- * @param os Operating system (Node.js platform string: win32, darwin, linux)
+ * AUTO-UPDATER EVENTS
+ *
+ * The funnel: offered -> download_started -> download_completed -> install_started
+ * -> app_updated (next launch). Every event carries update_channel. Emitted by
+ * src/renderer/src/extensions/updater/updaterAnalytics.ts from the updater's
+ * state transitions and button presses; a background check that finds nothing
+ * is not an event (4-hourly noise), everything else is.
+ */
+
+export type UpdateKindProp = "patch" | "update" | "downgrade";
+
+export interface AppUpdatedProps {
+  from_version: string;
+  to_version: string;
+  update_channel: string;
+}
+
+/**
+ * Sent once on the first launch after an update. Fires before analytics has
+ * started; the tracker queues it until consent and login are in.
  */
 export class AppUpdatedEvent implements MixpanelEvent {
   readonly eventName = "app_updated";
-  readonly properties: Record<string, any>;
-  constructor(from_version: string, to_version: string, os: string) {
-    this.properties = {
-      from_version,
-      to_version,
-      $os: mapPlatformToMixpanel(os),
-    };
+  readonly properties: Record<string, unknown>;
+  constructor(props: AppUpdatedProps) {
+    this.properties = { ...props, $os: mapPlatformToMixpanel(process.platform) };
+  }
+}
+
+export interface AppUpdateOfferedProps {
+  from_version: string;
+  to_version: string;
+  kind: UpdateKindProp;
+  /** the check that found it was user-initiated */
+  manual: boolean;
+  update_channel: string;
+}
+
+/** A newer version was found (or, on a purposeful switch to stable, an older one). */
+export class AppUpdateOfferedEvent implements MixpanelEvent {
+  readonly eventName = "app_update_offered";
+  readonly properties: Record<string, unknown>;
+  constructor(props: AppUpdateOfferedProps) {
+    this.properties = { ...props };
+  }
+}
+
+export interface AppUpdateDownloadStartedProps {
+  to_version: string;
+  kind: UpdateKindProp;
+  manual: boolean;
+  update_channel: string;
+}
+
+export class AppUpdateDownloadStartedEvent implements MixpanelEvent {
+  readonly eventName = "app_update_download_started";
+  readonly properties: Record<string, unknown>;
+  constructor(props: AppUpdateDownloadStartedProps) {
+    this.properties = { ...props };
+  }
+}
+
+export interface AppUpdateDownloadCompletedProps {
+  to_version: string;
+  kind: UpdateKindProp;
+  duration_ms: number | null;
+  update_channel: string;
+}
+
+/** Downloaded and verified (sha512 and signature); the update is staged. */
+export class AppUpdateDownloadCompletedEvent implements MixpanelEvent {
+  readonly eventName = "app_update_download_completed";
+  readonly properties: Record<string, unknown>;
+  constructor(props: AppUpdateDownloadCompletedProps) {
+    this.properties = { ...props };
+  }
+}
+
+/**
+ * Error messages can be arbitrarily long (stack traces, upstream HTTP bodies). Truncated in the
+ * event constructors rather than at the call sites, so a new caller cannot forget to do it.
+ */
+const MAX_ERROR_MESSAGE_LENGTH = 200;
+
+function truncateErrorMessage(message: string | undefined): string | undefined {
+  return message?.slice(0, MAX_ERROR_MESSAGE_LENGTH);
+}
+
+export interface AppUpdateDownloadFailedProps {
+  to_version: string;
+  kind: UpdateKindProp;
+  error_message: string;
+  /** whether the user was left with a working Download button to retry */
+  retry_offered: boolean;
+  update_channel: string;
+}
+
+export class AppUpdateDownloadFailedEvent implements MixpanelEvent {
+  readonly eventName = "app_update_download_failed";
+  readonly properties: Record<string, unknown>;
+  constructor(props: AppUpdateDownloadFailedProps) {
+    this.properties = { ...props, error_message: truncateErrorMessage(props.error_message) };
+  }
+}
+
+/** `already_staged` is a re-confirmation of an update the user already has, not a new offer. */
+export type UpdateCheckOutcome = "up_to_date" | "offered" | "failed" | "already_staged";
+
+export interface AppUpdateCheckCompletedProps {
+  manual: boolean;
+  outcome: UpdateCheckOutcome;
+  error_message?: string;
+  update_channel: string;
+}
+
+/**
+ * A check settled. Manual checks always report; background checks only when
+ * the outcome is not up_to_date, so a resolver broken in the field is visible
+ * without logging the 4-hourly nothing.
+ */
+export class AppUpdateCheckCompletedEvent implements MixpanelEvent {
+  readonly eventName = "app_update_check_completed";
+  readonly properties: Record<string, unknown>;
+  constructor(props: AppUpdateCheckCompletedProps) {
+    this.properties = { ...props, error_message: truncateErrorMessage(props.error_message) };
+  }
+}
+
+export type UpdateInstallSource = "notification" | "dialog";
+
+export interface AppUpdateInstallStartedProps {
+  to_version: string;
+  kind: UpdateKindProp;
+  source: UpdateInstallSource;
+  update_channel: string;
+}
+
+/** Restart Now pressed. Completion is app_updated on the next launch. */
+export class AppUpdateInstallStartedEvent implements MixpanelEvent {
+  readonly eventName = "app_update_install_started";
+  readonly properties: Record<string, unknown>;
+  constructor(props: AppUpdateInstallStartedProps) {
+    this.properties = { ...props };
+  }
+}
+
+export interface AppUpdateDowngradeDecidedProps {
+  from_version: string;
+  to_version: string;
+  accepted: boolean;
+  update_channel: string;
+}
+
+/** The downgrade dialog was answered: Downgrade, or Stay on current version. */
+export class AppUpdateDowngradeDecidedEvent implements MixpanelEvent {
+  readonly eventName = "app_update_downgrade_decided";
+  readonly properties: Record<string, unknown>;
+  constructor(props: AppUpdateDowngradeDecidedProps) {
+    this.properties = { ...props };
+  }
+}
+
+export interface AppUpdateChannelChangedProps {
+  from_channel: string;
+  to_channel: string;
+  update_channel: string;
+}
+
+/** A confirmed channel change; the dialogs' Cancel paths never reach here. */
+export class AppUpdateChannelChangedEvent implements MixpanelEvent {
+  readonly eventName = "app_update_channel_changed";
+  readonly properties: Record<string, unknown>;
+  constructor(props: AppUpdateChannelChangedProps) {
+    this.properties = { ...props };
+  }
+}
+
+/** Which button: the three What's New sites are distinct funnel moments, counted apart. */
+export type UpdateReleaseNotesSource = "offer" | "staged" | "error_retry" | "post_update";
+
+export interface AppUpdateReleaseNotesViewedProps {
+  to_version: string;
+  source: UpdateReleaseNotesSource;
+  update_channel: string;
+}
+
+/** What's New (before deciding) or View changes (after updating) was opened. */
+export class AppUpdateReleaseNotesViewedEvent implements MixpanelEvent {
+  readonly eventName = "app_update_release_notes_viewed";
+  readonly properties: Record<string, unknown>;
+  constructor(props: AppUpdateReleaseNotesViewedProps) {
+    this.properties = { ...props };
+  }
+}
+
+/** Fields on the app_ui_mode_changed event. */
+export interface UIModeChangedProps {
+  /** The mode being switched *to*, not the one being left. */
+  is_legacy_ui: boolean;
+}
+
+/**
+ * Sent when the user switches between the legacy and modern UI from Settings > Theme.
+ * Pairs with is_legacy_ui on app_launched: that reports the mode a session runs in,
+ * this reports the moment someone changes it.
+ */
+export class AppUIModeChangedEvent implements MixpanelEvent {
+  readonly eventName = "app_ui_mode_changed";
+  readonly properties: Record<string, unknown>;
+  constructor(props: UIModeChangedProps) {
+    this.properties = { ...props };
   }
 }
 
@@ -77,15 +292,38 @@ export class AppUpsellClickedEvent implements MixpanelEvent {
   constructor() {}
 }
 
+/** Where the support bundle was asked for. Only the Help menu today. */
+export type SupportBundleSource = "help_menu";
+
+/**
+ * Sent when the user asks Vortex to prepare a support bundle (Help > Create support bundle).
+ * Counts the request, not whether the archive was built or sent on.
+ */
+export class AppSupportBundleClickedEvent implements MixpanelEvent {
+  readonly eventName = "app_support_bundle_clicked";
+  readonly properties: Record<string, unknown>;
+  constructor(props: { source: SupportBundleSource }) {
+    this.properties = { ...props };
+  }
+}
+
+/** Whether Vortex found the game itself or the user picked its folder. */
+export type GameDiscoveryMethod = "automatic" | "manual";
+
 /** Fields on the app_game_manage event. */
 export interface GameManagedProps {
   game_id: number | null;
   extension_version: string;
+  // Store id from discovery (steam, gog, epic, xbox...), null when Vortex couldn't tell.
+  game_store: string | null;
+  discovery_method: GameDiscoveryMethod;
 }
 
 /**
  * Sent the first time a game is managed, when its first profile is created.
- * `extension_version` is the version of the game's support extension.
+ * `extension_version` is the version of the game's support extension, `game_store` the store the
+ * game was installed from, and `discovery_method` whether its folder was found automatically or
+ * set by hand.
  */
 export class AppGameManagedEvent implements MixpanelEvent {
   readonly eventName = "app_game_manage";
@@ -623,12 +861,15 @@ export interface ModsDeployedProps {
   enabled_mod_count: number;
   manual: boolean;
   is_collection_postprocess: boolean;
+  duration_ms: number;
 }
 
 /**
  * Sent when a deployment to the game directory completes successfully. `deployment_method` is the
  * activator (hardlink, symlink, ...); `manual` marks a user-triggered deploy over an automatic one;
  * `is_collection_postprocess` marks the deploy Vortex runs while finishing a collection install.
+ * `duration_ms` runs from the deployment activity starting to the end of post-deployment, so it
+ * excludes time queued behind other deployments and running installs.
  */
 export class ModsDeployedEvent implements MixpanelEvent {
   readonly eventName = "mods_deployed";
@@ -650,11 +891,10 @@ export class ModsDeployedEvent implements MixpanelEvent {
  * `is_update` marks an install that replaced a previous version.
  */
 export interface AppExtensionInstalledProps {
-  extension_id?: string;
   extension_name: string;
-  author: string;
   version: string;
   mod_id?: number;
+  file_id?: number;
   extension_type: "game" | "other";
   game_domain?: string;
   game_name?: string;
@@ -667,6 +907,34 @@ export class AppExtensionInstalledEvent implements MixpanelEvent {
   readonly eventName = "app_extension_installed";
   readonly properties: Record<string, unknown>;
   constructor(props: AppExtensionInstalledProps) {
+    this.properties = { ...props };
+  }
+}
+
+/** Fields on the app_deprecated_api_used event. */
+export interface AppDeprecatedApiUsedProps {
+  /** name of the deprecated surface */
+  api_method: string;
+  /** name of the extension calling the deprecated API */
+  extension_name: string;
+  /** extension version */
+  extension_version?: string;
+  /** extension mod ID if it came from Nexus Mods */
+  mod_id?: number;
+  /** extension file ID if it came from Nexus Mods */
+  file_id?: number;
+  /** whether the extension is bundled or not */
+  bundled: boolean;
+}
+
+/**
+ * Sent when an extension touches a deprecated extension-api surface. Emitted once per session per
+ * extension and method, so a hot-looping extension cannot flood the tracker.
+ */
+export class AppDeprecatedApiUsedEvent implements MixpanelEvent {
+  readonly eventName = "app_deprecated_api_used";
+  readonly properties: Record<string, unknown>;
+  constructor(props: AppDeprecatedApiUsedProps) {
     this.properties = { ...props };
   }
 }

@@ -3,12 +3,12 @@ import { useTranslation } from "react-i18next";
 
 import { Pill } from "../../../ui/components/pill/Pill";
 
-export const StagingIndicator: FC = () => {
+export const StagingIndicator: FC<React.PropsWithChildren<unknown>> = () => {
   const { t } = useTranslation();
 
   if (process.env.IS_VORTEX_PREVIEW !== "true") {
     return null;
   }
 
-  return <Pill pillType="success">{t("STAGING")}</Pill>;
+  return <Pill brand="success">{t("STAGING")}</Pill>;
 };

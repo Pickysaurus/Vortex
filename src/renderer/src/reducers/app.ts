@@ -1,56 +1,77 @@
-import { app } from "electron";
+import shortid from "shortid";
 
 import * as actions from "../actions/app";
-import type { IReducerSpec } from "../types/IExtensionContext";
-import { deleteOrNop, pushSafe, setSafe } from "../util/storeHelper";
+import type { IApp, IExtensionState } from "../types/IState";
+import { actionsToReducerSpec } from "./builder";
 
-export const appReducer: IReducerSpec = {
-  reducers: {
-    [actions.setStateVersion as any]: (state, payload) => setSafe(state, ["version"], payload),
-    [actions.setApplicationVersion as any]: (state, payload) =>
-      setSafe(state, ["appVersion"], payload),
-    [actions.addExtension as any]: (state, payload) => {
-      const { extensionId, info } = payload;
-      const existing = state.extensions?.[extensionId] ?? {};
-      return setSafe(state, ["extensions", extensionId], {
-        ...existing,
-        name: info.name,
-        version: info.version,
-        author: info.author,
-        description: info.description,
-        path: info.path,
-        modId: info.modId,
-        fileId: info.fileId,
-        type: info.type,
-        bundled: info.bundled,
-      });
+const defaultState: IApp = {
+  instanceId: undefined,
+  version: "",
+  appVersion: "",
+  extensions: {},
+  warnedAdmin: 0,
+  migrations: [],
+  installType: "regular",
+  // main overwrites this at startup; false until then so nothing checks before we know
+  updaterActive: false,
+};
+
+// entries are created only by addExtension, so a write through a key naming
+// none must not mint a partial entry holding just that field
+function updateExtension(
+  state: IApp,
+  extensionId: string,
+  changes: Partial<IExtensionState>,
+): IApp {
+  if (state.extensions[extensionId] === undefined) return state;
+  return {
+    ...state,
+    extensions: {
+      ...state.extensions,
+      [extensionId]: { ...state.extensions[extensionId], ...changes },
     },
-    [actions.setExtensionEnabled as any]: (state, payload) =>
-      setSafe(state, ["extensions", payload.extensionId, "enabled"], payload.enabled),
-    [actions.setExtensionVersion as any]: (state, payload) =>
-      setSafe(state, ["extensions", payload.extensionId, "version"], payload.version),
-    [actions.setExtensionEndorsed as any]: (state, payload) =>
-      setSafe(state, ["extensions", payload.extensionId, "endorsed"], payload.endorsed),
-    [actions.removeExtension as any]: (state, payload) =>
-      setSafe(state, ["extensions", payload, "remove"], true),
-    [actions.forgetExtension as any]: (state, payload) =>
-      deleteOrNop(state, ["extensions", payload]),
-    [actions.setInstanceId as any]: (state, payload) => setSafe(state, ["instanceId"], payload),
-    [actions.setWarnedAdmin as any]: (state, payload) => setSafe(state, ["warnedAdmin"], payload),
-    [actions.setInstallType as any]: (state, payload) => setSafe(state, ["installType"], payload),
-    [actions.completeMigration as any]: (state, payload) =>
-      pushSafe(state, ["migrations"], payload),
+  };
+}
+
+export const appReducer = actionsToReducerSpec(
+  defaultState,
+  actions,
+  {
+    setStateVersion: (state, payload) => ({ ...state, version: payload }),
+    setApplicationVersion: (state, payload) => ({ ...state, appVersion: payload }),
+    addExtension: (state, payload) => {
+      const { extension } = payload;
+      const id = shortid();
+
+      return {
+        ...state,
+        extensions: {
+          ...state.extensions,
+          [id]: extension,
+        },
+      };
+    },
+    setExtensionEnabled: (state, payload) =>
+      updateExtension(state, payload.extensionId, { enabled: payload.enabled }),
+    setExtensionVersion: (state, payload) =>
+      updateExtension(state, payload.extensionId, { version: payload.version }),
+    setExtensionEndorsed: (state, payload) =>
+      updateExtension(state, payload.extensionId, { endorsed: payload.endorsed }),
+    removeExtension: (state, payload) => updateExtension(state, payload, { remove: true }),
+    forgetExtension: (state, payload) => {
+      const { [payload]: _, ...extensions } = state.extensions;
+      return { ...state, extensions };
+    },
+    setInstanceId: (state, payload) => ({ ...state, instanceId: payload }),
+    setWarnedAdmin: (state, payload) => ({ ...state, warnedAdmin: payload }),
+    setInstallType: (state, payload) => ({ ...state, installType: payload }),
+    setUpdaterActive: (state, payload) => ({ ...state, updaterActive: payload }),
+    completeMigration: (state, payload) => ({
+      ...state,
+      migrations: [...state.migrations, payload],
+    }),
   },
-  defaults: {
-    instanceId: undefined,
-    version: "",
-    appVersion: "",
-    extensions: {},
-    warnedAdmin: 0,
-    migrations: [],
-    installType: "official",
-  },
-  verifiers: {
+  {
     instanceId: {
       description: () => "No instance id set",
       type: "string",
@@ -68,4 +89,4 @@ export const appReducer: IReducerSpec = {
       noUndefined: true,
     },
   },
-};
+);

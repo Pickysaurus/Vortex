@@ -1,4 +1,3 @@
-import type PromiseBB from "bluebird";
 import type { TFunction } from "i18next";
 import React from "react";
 import { ListGroup } from "react-bootstrap";
@@ -13,10 +12,8 @@ interface IGamesListProps {
   type: string;
   gameMode: string;
   discoveredGames: { [id: string]: IDiscoveryResult };
-  container: HTMLElement | null;
-  getBounds: () => ClientRect;
-  onRefreshGameInfo: (gameId: string) => PromiseBB<void>;
-  onBrowseGameLocation: (gameId: string) => PromiseBB<void>;
+  onRefreshGameInfo: (gameId: string) => PromiseLike<void>;
+  onBrowseGameLocation: (gameId: string) => PromiseLike<void>;
 }
 
 export const GamesList = ({
@@ -25,8 +22,6 @@ export const GamesList = ({
   type,
   gameMode,
   discoveredGames,
-  container,
-  getBounds,
   onRefreshGameInfo,
   onBrowseGameLocation,
 }: IGamesListProps) => (
@@ -34,10 +29,8 @@ export const GamesList = ({
     {games.map((game) => (
       <GameRow
         active={game.id === gameMode}
-        container={container}
         discovery={discoveredGames[game.id]}
         game={game}
-        getBounds={getBounds}
         key={game.id}
         t={t}
         type={type}

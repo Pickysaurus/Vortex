@@ -1,4 +1,4 @@
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { describe, it, expect, vi, afterEach } from "vitest";
@@ -8,7 +8,6 @@ import { NoResults } from "./NoResults";
 // --- Helpers ---
 
 afterEach(() => {
-  cleanup();
   vi.restoreAllMocks();
 });
 
@@ -90,6 +89,19 @@ describe("NoResults", () => {
     it('applies the success icon colour for appearance="success"', () => {
       renderComponent({ appearance: "success", iconPath: "M0 0h24v24H0z" });
       expect(screen.getByRole("presentation")).toHaveClass("text-success-strong");
+    });
+
+    // It replaces rather than adds, so an animated icon can set its own colour without
+    // two conflicting text-colour utilities racing in the stylesheet.
+    it("lets iconClassName take over from the appearance colour", () => {
+      renderComponent({
+        iconClassName: "animate-spin text-primary-strong",
+        iconPath: "M0 0h24v24H0z",
+      });
+
+      const icon = screen.getByRole("presentation");
+      expect(icon).toHaveClass("animate-spin", "text-primary-strong");
+      expect(icon).not.toHaveClass("text-neutral-subdued");
     });
   });
 

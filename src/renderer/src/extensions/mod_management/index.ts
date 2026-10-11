@@ -7,38 +7,38 @@ import React from "react";
 import type * as Redux from "redux";
 import shortid from "shortid";
 
-import { setDialogVisible } from "../../actions";
-import {
-  dismissNotification,
-  type ICheckbox,
-  updateNotification,
-} from "../../actions/notifications";
-import { setSettingsPage, startActivity, stopActivity } from "../../actions/session";
-import LazyComponent from "../../controls/LazyComponent";
-import { log } from "../../logging";
-import ReduxProp from "../../ReduxProp";
+import { setDialogVisible } from "@/actions";
+import { dismissNotification, type ICheckbox, updateNotification } from "@/actions";
+import { setProgress, setSettingsPage, startActivity, stopActivity } from "@/actions";
+import { log } from "@/logging";
 import type {
   IExtensionApi,
   IExtensionContext,
   IInstallResult,
   MergeFunc,
   MergeTest,
-} from "../../types/IExtensionContext";
-import type { IGame } from "../../types/IGame";
-import type { INotification } from "../../types/INotification";
+} from "@/types/IExtensionContext";
+import type { IGame } from "@/types/IGame";
+import type { INotification } from "@/types/INotification";
+import type { ITableAttribute } from "@/types/ITableAttribute";
+import type { ITestResult } from "@/types/ITestResult";
+import { nxmModOutline } from "@/ui/icon-paths";
+import { withTrackedActivity } from "@/util/errorHandling";
+import { laterT, type TFunction } from "@/util/i18n";
+import { showError } from "@/util/message";
+import { getSafe } from "@/util/storeHelper";
+import { batchDispatch, isChildPath, truthy, wrapExtCBAsync } from "@/util/util";
+import { waitForCondition } from "@/util/waitForCondition";
+
+import LazyComponent from "../../controls/LazyComponent";
+import ReduxProp from "../../ReduxProp";
 import type { IDiscoveryResult, IState } from "../../types/IState";
-import type { ITableAttribute } from "../../types/ITableAttribute";
-import type { ITestResult } from "../../types/ITestResult";
-import { nxmModOutline } from "../../ui/icon-paths";
 import { opn } from "../../util/api";
 import { ProcessCanceled, TemporaryError, UserCanceled } from "../../util/CustomErrors";
 import Debouncer from "../../util/Debouncer";
-import { withTrackedActivity } from "../../util/errorHandling";
 import * as fs from "../../util/fs";
 import getNormalizeFunc from "../../util/getNormalizeFunc";
 import getVortexPath from "../../util/getVortexPath";
-import { laterT, type TFunction } from "../../util/i18n";
-import { showError } from "../../util/message";
 import onceCB from "../../util/onceCB";
 import {
   activeGameId,
@@ -51,11 +51,9 @@ import {
   modPathsForGame,
   profileById,
 } from "../../util/selectors";
-import { getSafe } from "../../util/storeHelper";
-import { batchDispatch, isChildPath, truthy, wrapExtCBAsync } from "../../util/util";
-import { waitForCondition } from "../../util/waitForCondition";
 import { emitModsDeployed } from "../analytics/mixpanel/deployAnalytics";
 import { emitModStateChanged } from "../analytics/mixpanel/modChangeAnalytics";
+import { emitModListSnapshot } from "../analytics/utils/modListSnapshot";
 import { setDownloadModInfo } from "../download_management/actions/state";
 import { getGame } from "../gamemode_management/util/getGame";
 import { getModType } from "../gamemode_management/util/modTypeExtensions";
@@ -72,6 +70,7 @@ import { setDeploymentNecessary } from "./actions/deployment";
 import { cacheModReference, removeMod, setModAttribute } from "./actions/mods";
 import { setDeploymentProblem } from "./actions/session";
 import { setTransferMods } from "./actions/transactions";
+import { CollectionUpdateWarning } from "./components/collection_update_warning/CollectionUpdateWarning";
 import {
   onAddMod,
   onGameModeActivated,
@@ -115,6 +114,7 @@ import allTypesSupported from "./util/allTypesSupported";
 import * as basicInstaller from "./util/basicInstaller";
 import BlacklistSet from "./util/BlacklistSet";
 import { genSubDirFunc, purgeMods, purgeModsInPath } from "./util/deploy";
+import { reportRecordedFailures, resetDeploymentFailures } from "./util/deploymentFailures";
 import {
   getAllActivators,
   getCurrentActivator,
@@ -145,6 +145,29 @@ import Workarounds from "./views/Workarounds";
 
 interface IAppContext {
   isProfileChanging: boolean;
+}
+
+declare module "../../types/IExtensionContext" {
+  interface ApiEvents {
+    "start-install-download": (
+      downloadId: string,
+      // legacy callers pass a bare allowAutoEnable flag, normalized by the handler
+      options?: IInstallOptions | boolean,
+      callback?: (err: Error | null, modId?: string) => void,
+    ) => void;
+    "will-remove-mods": (gameId: string, modIds: string[], options?: IRemoveModOptions) => void;
+    "will-remove-mod": (gameId: string, modId: string, options?: IRemoveModOptions) => void;
+    // every deployments map below is keyed by mod type id
+    "will-purge": (profileId: string, deployments: Record<string, IDeployedFile[]>) => void;
+    "did-purge": (profileId: string) => void;
+    "did-deploy": (
+      profileId: string,
+      deployments: Record<string, IDeployedFile[]>,
+      setTitle: (title: string) => void,
+      options?: IDeployOptions,
+    ) => void;
+    "mods-did-deploy": (profileId: string, deployments: Record<string, IDeployedFile[]>) => void;
+  }
 }
 
 const appContext: IAppContext = {
@@ -629,13 +652,18 @@ function genUpdateModDeployment(installManager: InstallManager) {
       message: t("Waiting for other operations to complete"),
       title: t("Deploying"),
     };
+    // The modern layout's Apply button shows the progress, so only the legacy one gets the notification.
+    const showNotification = !(api.getState().settings.window.useModernLayout ?? true);
 
-    const progress = (text: string, percent: number) => {
+    // `step` is what the Apply button's tooltip shows; it defaults to the notification's text.
+    const progress = (text: string, percent: number, step: string = text) => {
       log("debug", "deployment progress", { text, percent });
       if (progressCB !== undefined) {
         progressCB(text, percent);
       }
       api.store.dispatch(updateNotification(notification.id, percent, text));
+      // Also in the store, so the menu's Apply button can show how far along it is.
+      api.store.dispatch(setProgress("mods", "deployment", step, percent));
     };
     const state: IState = api.store.getState();
     let profile: IProfile = state.persistent.profiles?.[profileId] ?? activeProfile(state);
@@ -714,6 +742,7 @@ function genUpdateModDeployment(installManager: InstallManager) {
     // will contain all mods fully overwritten (this also includes mods that didn't
     // files to begin with)
     let sortedModList: IMod[];
+    let deployStartedAt: number;
 
     const userGate = () => {
       if (!appContext.isProfileChanging && game.deploymentGate !== undefined) {
@@ -740,7 +769,9 @@ function genUpdateModDeployment(installManager: InstallManager) {
           if (!manual) {
             await userGate();
           }
-          notification.id = api.sendNotification(notification);
+          if (showNotification) {
+            notification.id = api.sendNotification(notification);
+          }
 
           try {
             await withActivationLock(async () => {
@@ -767,8 +798,11 @@ function genUpdateModDeployment(installManager: InstallManager) {
               const lastDeployment: { [typeId: string]: IDeployedFile[] } = {};
               const mods: Record<string, IMod> = state.persistent.mods?.[profile?.gameId] ?? {};
               notification.message = t("Deploying mods");
-              api.sendNotification(notification);
+              if (showNotification) {
+                api.sendNotification(notification);
+              }
               api.store.dispatch(startActivity("mods", "deployment"));
+              deployStartedAt = Date.now();
               progress(t("Loading deployment manifest"), 0);
 
               // sequential: load activation order matters per mod type
@@ -827,8 +861,9 @@ function genUpdateModDeployment(installManager: InstallManager) {
               );
 
               progress(t("Starting deployment"), 35);
+              resetDeploymentFailures(api, game.id);
               const deployProgress = (name, percent) =>
-                progress(t("Deploying: ") + name, 50 + percent / 2);
+                progress(t("Deploying: ") + name, 50 + percent / 2, name);
 
               const undiscovered = Object.keys(modPaths).filter(
                 (typeId) => !truthy(modPaths[typeId]),
@@ -864,7 +899,8 @@ function genUpdateModDeployment(installManager: InstallManager) {
 
             await bakeSettings(api, profile, sortedModList);
 
-            api.store.dispatch(setDeploymentNecessary(game.id, false));
+            const failures = reportRecordedFailures(api, game.id);
+            api.store.dispatch(setDeploymentNecessary(game.id, failures.length > 0));
 
             emitModsDeployed(api, {
               gameId,
@@ -873,7 +909,9 @@ function genUpdateModDeployment(installManager: InstallManager) {
               enabledModCount,
               manual,
               isCollectionPostprocess: deployOptions?.isCollectionPostprocessCall ?? false,
+              durationMs: Date.now() - deployStartedAt,
             });
+            void emitModListSnapshot(api, gameId);
           } catch (unknownErr) {
             const err = unknownToError(unknownErr);
             if (err instanceof UserCanceled) {
@@ -929,6 +967,7 @@ function genUpdateModDeployment(installManager: InstallManager) {
             }
           } finally {
             api.store.dispatch(stopActivity("mods", "deployment"));
+            api.store.dispatch(setProgress("mods", "deployment", undefined, 0));
             api.dismissNotification(notification.id);
           }
         },
@@ -1194,7 +1233,12 @@ function onModsEnabled(api: IExtensionApi, deploymentTimer: Debouncer) {
       }
     });
     if (state.settings.automation.deploy && options?.allowAutoDeploy !== false) {
-      deploymentTimer.schedule(undefined, false);
+      // Lets the UI show the deploy as under way while the timer runs down.
+      store.dispatch(startActivity("mods", "deployment_pending"));
+      deploymentTimer.schedule(
+        () => store.dispatch(stopActivity("mods", "deployment_pending")),
+        false,
+      );
     } else if (!state.persistent.deployment.needToDeploy[gameId]) {
       store.dispatch(setDeploymentNecessary(gameId, true));
     }
@@ -1250,6 +1294,7 @@ function onDeploySingleMod(api: IExtensionApi) {
           stagingPath,
           activator,
         );
+        resetDeploymentFailures(api, gameId);
         await activator.prepare(dataPath, false, lastActivation, normalize);
         if (mod !== undefined) {
           if (enable !== false) {
@@ -1273,6 +1318,7 @@ function onDeploySingleMod(api: IExtensionApi) {
           newActivation,
           activator.id,
         );
+        reportRecordedFailures(api, gameId);
       } catch (unknownErr) {
         if (activator.cancel !== undefined) {
           activator.cancel(gameId, dataPath, stagingPath);
@@ -1502,6 +1548,10 @@ function once(api: IExtensionApi) {
     (profileId: string, gameId: string, modIds: string[], silent?: boolean) => {
       const state: IState = api.store.getState();
       const profile: IProfile = getSafe(state, ["persistent", "profiles", profileId], undefined);
+      if (profile === undefined) {
+        log("warn", "skipping dependency install, profile no longer exists", { profileId, modIds });
+        return;
+      }
 
       Promise.all(
         modIds.map((modId) =>
@@ -1528,6 +1578,7 @@ function once(api: IExtensionApi) {
         const profile: IProfile = getSafe(state, ["persistent", "profiles", profileId], undefined);
         if (profile === undefined) {
           api.showErrorNotification("Failed to install recommendations", "Invalid profile");
+          return;
         }
 
         Promise.all(
@@ -2077,6 +2128,10 @@ function init(context: IExtensionContext): boolean {
       priority: 1,
       hotkey: "M",
       group: "per-game",
+      // The redesigned page, except under the classic UI, which still has the page it
+      // always had — see ModList. A callback rather than a value so the answer follows
+      // the setting instead of being fixed when the page registered.
+      newLayout: () => context.api.getState().settings.window.useModernLayout ?? true,
       visible: () => activeGameId(context.api.store.getState()) !== undefined,
       activity: modsActivity,
       props: () => ({
@@ -2087,12 +2142,16 @@ function init(context: IExtensionContext): boolean {
     },
   );
 
-  context.registerAction("mod-icons", 105, ActivationButton, {}, () => ({
+  // Deploy and Purge for the classic toolbar, which renders whatever component a
+  // registration gives it. The new toolbar builds its own pair instead — it renders
+  // actions rather than arbitrary components, see useModToolbarActions — so these are
+  // marked classic-only and it skips them rather than showing each twice.
+  context.registerAction("mod-icons", 105, ActivationButton, { isClassicOnly: true }, () => ({
     key: "activate-button",
     getActivators: getAllActivators,
   }));
 
-  context.registerAction("mod-icons", 110, DeactivationButton, {}, () => ({
+  context.registerAction("mod-icons", 110, DeactivationButton, { isClassicOnly: true }, () => ({
     key: "deactivate-button",
     getActivators: getAllActivators,
   }));
@@ -2169,6 +2228,8 @@ function init(context: IExtensionContext): boolean {
     75,
   );
   context.registerSettings("Workarounds", Workarounds, undefined, undefined, 1000);
+
+  context.registerDialog("collection-update-warning", CollectionUpdateWarning);
 
   context.registerDialog(
     "external-changes",
@@ -2277,7 +2338,7 @@ function init(context: IExtensionContext): boolean {
   const history = new ModHistory(context.api);
 
   context.registerHistoryStack("mods", history);
-  context.registerAction("mod-icons", 200, "history", {}, "History", () => {
+  context.registerAction("mod-icons", 40, "history", { pinned: true }, "History", () => {
     context.api.ext.showHistory?.("mods");
   });
 

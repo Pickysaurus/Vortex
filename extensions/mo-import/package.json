@@ -5,7 +5,8 @@
   "scripts": {
     "_assets": "copyfiles -u 1 -f src/stylesheets/mo-import.scss dist",
     "build": "node build.mjs && pnpm run _assets && pnpm extractInfo",
-    "typecheck": "pnpm tsc"
+    "typecheck": "pnpm tsc",
+    "lint:strict": "pnpm exec node ../../scripts/strict-lint.mjs"
   },
   "author": "Black Tree Gaming Ltd.",
   "license": "GPL-3.0",
@@ -15,8 +16,8 @@
     "extensionName": "Import Tool: Mod Organizer (MO)"
   },
   "devDependencies": {
+    "@nexusmods/vortex-api": "workspace:*",
     "@types/bluebird": "catalog:",
-    "@types/i18next": "catalog:",
     "@types/react": "catalog:",
     "@types/react-bootstrap": "catalog:",
     "@types/react-dom": "catalog:",
@@ -35,7 +36,6 @@
     "redux": "catalog:",
     "semver": "catalog:",
     "shortid": "catalog:",
-    "@nexusmods/vortex-api": "workspace:*",
     "vortex-parse-ini": "catalog:"
   },
   "nx": {

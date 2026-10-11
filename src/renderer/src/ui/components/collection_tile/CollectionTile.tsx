@@ -15,6 +15,10 @@ import React, {
   useState,
 } from "react";
 
+import {
+  HOVER_REFRESH_FLOOR,
+  scheduleMembershipRefresh,
+} from "@/extensions/nexus_integration/membership";
 import type { IExtensionApi } from "@/types/IExtensionContext";
 import { Bullet } from "@/ui/components/bullet/Bullet";
 import { Button } from "@/ui/components/button/Button";
@@ -33,16 +37,6 @@ const debouncer = new Debouncer(
     return delayed(5000);
   },
   5000,
-  false,
-  true,
-);
-
-const userInfoDebouncer = new Debouncer(
-  (func: () => void) => {
-    func?.();
-    return Promise.resolve();
-  },
-  10000,
   false,
   true,
 );
@@ -66,7 +60,7 @@ const Stat = ({ children, iconPath }: PropsWithChildren<{ iconPath: string }>) =
   </div>
 );
 
-export const CollectionTile: ComponentType<ICollectionTileProps> = ({
+export const CollectionTile: ComponentType<React.PropsWithChildren<ICollectionTileProps>> = ({
   api,
   collection,
   isLoggedIn = true,
@@ -99,14 +93,14 @@ export const CollectionTile: ComponentType<ICollectionTileProps> = ({
     setCanBeAdded(!collectionModInstalled && isLoggedIn);
   }, [api, collection.slug, pending, isHovered, isLoggedIn]);
 
-  // Refresh user info when user hovers on the tile, debounced to once per 5 seconds
+  // Hovering a tile is a hint the user is about to install, so make sure the membership the
+  // install path reads is current. Mouse movement alone fires this, so it stands down while a
+  // recent read already covers it.
   useEffect(() => {
-    if (isHovered && api?.events) {
-      userInfoDebouncer.schedule(undefined, () => {
-        api.events.emit("refresh-user-info");
-      });
+    if (isHovered && isLoggedIn && api?.events) {
+      scheduleMembershipRefresh(api, HOVER_REFRESH_FLOOR);
     }
-  }, [isHovered]);
+  }, [api, isHovered, isLoggedIn]);
 
   const addCollection = useCallback(() => {
     if (!pending && canBeAdded && isLoggedIn) {
@@ -123,6 +117,7 @@ export const CollectionTile: ComponentType<ICollectionTileProps> = ({
   return (
     <div
       className={joinClasses(["w-full rounded-md bg-surface-mid", className])}
+      data-testid="collection-tile"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -214,13 +209,13 @@ export const CollectionTile: ComponentType<ICollectionTileProps> = ({
             brand="neutral"
             disabled={true}
             leftIconPath={!isLoggedIn ? undefined : mdiCheck}
-            size="xs"
+            size="sm"
             title={!isLoggedIn ? "Log in to add collections" : undefined}
           >
             {!isLoggedIn ? "Log in to add" : "Added"}
           </Button>
         ) : (
-          <Button size="xs" onClick={addCollection}>
+          <Button size="sm" onClick={addCollection}>
             Add collection
           </Button>
         )}
@@ -229,7 +224,7 @@ export const CollectionTile: ComponentType<ICollectionTileProps> = ({
           appearance="weak"
           brand="neutral"
           leftIconPath={mdiOpenInNew}
-          size="xs"
+          size="sm"
           onClick={onViewPage}
         >
           View page

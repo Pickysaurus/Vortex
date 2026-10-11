@@ -1,3 +1,4 @@
+import type { FileSystem } from "../fs/filesystem";
 import type { SerializedSpan } from "../telemetry/types";
 import type {
   BrowserViewConstructorOptions,
@@ -23,11 +24,14 @@ import type {
   AppInitMetadata,
   HashAlgorithm,
   Serializable,
-  UpdateStatus,
+  UpdaterStatusResponse,
   VortexPaths,
   WireDownloadCheckpoint,
   WireDownloadState,
   WireResolvedResource,
+  WireS3MultipartRequest,
+  WireUploadProgress,
+  WireUploadRequest,
 } from "./ipc";
 import type { Level } from "./logging";
 import type { PersistedHive, PersistedState } from "./state";
@@ -101,6 +105,9 @@ export interface Api {
   /** Downloader APIs */
   downloader: DownloaderApi;
 
+  /** Uploader APIs */
+  uploader: UploaderApi;
+
   /** bsdiff binary patching APIs (run on a main-process worker_thread) */
   bsdiff: BsdiffApi;
 
@@ -112,6 +119,9 @@ export interface Api {
 
   /** Feature flags API */
   featureFlags: FeatureFlagsApi;
+
+  /** Filesystem API */
+  fs: FileSystem;
 }
 
 export interface Example {
@@ -125,6 +135,9 @@ export interface Shell {
 
   /** Opens the file using the default application for the file extension */
   openFile(filePath: string): void;
+
+  /** Opens the file explorer with the file selected */
+  showItemInFolder(filePath: string): void;
 }
 
 export interface Diag {
@@ -446,9 +459,18 @@ export interface AdaptorsApi {
 /** API for querying update status from main process */
 export interface UpdaterApi {
   /**
-   * Get current update status from main process.
+   * Read the updater's status from main. The renderer polls this; with
+   * `since` (the last seen sequence number) the reply includes every
+   * snapshot recorded after it, in order.
    */
-  getStatus(): Promise<UpdateStatus>;
+  getStatus(since?: number): Promise<UpdaterStatusResponse>;
+
+  /**
+   * Release notes covering the update the app just went through. Null when
+   * this launch did not follow an update or the notes are unavailable.
+   * Takes the renderer's persisted update channel.
+   */
+  getUpdateChangelog(channel: string): Promise<string | null>;
 
   /**
    * Set the update channel and trigger an update check.
@@ -470,6 +492,23 @@ export interface UpdaterApi {
    * Trigger restart and install of the downloaded update.
    */
   restartAndInstall(): void;
+
+  /**
+   * Download the downgrade offered after an explicit switch to stable.
+   * Ignored by main unless a downgrade offer is outstanding.
+   */
+  downloadDowngrade(installAfterDownload?: boolean): void;
+
+  /**
+   * Decline the outstanding downgrade offer. Clears it; only another
+   * purposeful switch to stable raises it again.
+   */
+  declineDowngrade(): void;
+
+  /**
+   * Cancel the download in progress. Ignored by main unless one is running.
+   */
+  cancelDownload(): void;
 }
 
 /** API for interacting with the DownloadManager in main */
@@ -508,6 +547,34 @@ export interface DownloaderApi {
    * Returns an unsubscribe function.
    */
   onResolve(handler: (collationId: number) => Promise<WireResolvedResource>): () => void;
+}
+
+export interface UploaderApi {
+  /**
+   * PUTs the whole file to a URL that already grants the write. Transient
+   * failures are retried in main with backoff; a rejection is terminal.
+   */
+  file(request: WireUploadRequest): Promise<void>;
+
+  /**
+   * Uploads the file as a sequence of parts and closes the session, following
+   * the Amazon S3 multipart specification (per-part ETags collected into a
+   * `CompleteMultipartUpload` document). `fileSize` must match the layout the
+   * session was created with.
+   */
+  s3Multipart(request: WireS3MultipartRequest): Promise<void>;
+
+  /**
+   * Byte progress for a running upload, or null once it has settled. Poll this
+   * while a transfer is in flight, at whatever cadence the UI needs.
+   */
+  getProgress(uploadId: number): Promise<WireUploadProgress | null>;
+
+  /**
+   * Stops a running upload; the `file`/`s3Multipart` call that started it
+   * rejects with an `UploadError` carrying `cancellation`.
+   */
+  cancel(uploadId: number): Promise<void>;
 }
 
 export interface BsdiffApi {

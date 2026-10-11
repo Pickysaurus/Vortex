@@ -30,20 +30,20 @@ export interface IFlagsProviderProps {
   children: ReactNode;
 }
 
-export const FlagsProvider: FC<IFlagsProviderProps> = ({ children }) => {
+export const FlagsProvider: FC<React.PropsWithChildren<IFlagsProviderProps>> = ({ children }) => {
   const [flags, setFlags] = useState<ReadonlyMap<KnownFlagName, FeatureFlag>>(
-    () => FlagService.instance.flags,
+    () => FlagService.instance?.flags ?? new Map(),
   );
 
   useEffect(() => {
-    return FlagService.instance.subscribe((flags) => {
+    return FlagService.instance?.subscribe((flags) => {
       setFlags(flags);
     });
   }, []);
 
   const getFlag = useCallback(
     <N extends KnownFlagName>(name: N): FlagByName<N> | undefined =>
-      FlagService.instance.getFlag(name),
+      FlagService.instance?.getFlag(name),
     // flags is listed so getFlag referential identity changes when flags do,
     // ensuring consumers that memoize on getFlag re-evaluate after a push.
     // eslint-disable-next-line @eslint-react/exhaustive-deps

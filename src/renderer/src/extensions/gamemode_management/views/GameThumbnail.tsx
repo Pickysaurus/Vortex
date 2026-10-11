@@ -1,26 +1,24 @@
-import * as path from "path";
-import * as url from "url";
-
-import type PromiseBB from "bluebird";
 import type { TFunction } from "i18next";
 import * as React from "react";
-import { Button, Panel, Popover } from "react-bootstrap";
+import { Button, Panel } from "react-bootstrap";
 import { Provider } from "react-redux";
 
 import { connect, PureComponentEx } from "@/controls/ComponentEx";
 import Icon from "@/controls/Icon";
 import IconBar from "@/controls/IconBar";
-import OverlayTrigger from "@/controls/OverlayTrigger";
-import { IconButton } from "@/controls/TooltipControls";
-import { gameTileImageURL } from "@/extensions/nexus_integration/util/gameTileImageURL";
 import type { IActionDefinition } from "@/types/api";
 import type { IMod, IProfile, IState } from "@/types/IState";
 import { Image } from "@/ui/components/image/Image";
+import { Popover } from "@/ui/components/popover/Popover";
+import { PopoverButton } from "@/ui/components/popover/PopoverButton";
+import { PopoverPanel } from "@/ui/components/popover/PopoverPanel";
+import { Tooltip } from "@/ui/components/tooltip/Tooltip";
 import { joinClasses } from "@/ui/utils/joinClasses";
 import { getSafe } from "@/util/storeHelper";
 import { countIf } from "@/util/util";
 
 import type { IGameStored } from "../types/IGameStored";
+import { gameArtURL } from "../util/gameArtURL";
 import ActiveModCount from "./ActiveModCount";
 import GameInfoPopover from "./GameInfoPopover";
 import GameName from "./GameName";
@@ -30,10 +28,8 @@ export interface IBaseProps {
   game: IGameStored;
   active: boolean;
   discovered?: boolean;
-  onRefreshGameInfo?: (gameId: string) => PromiseBB<void>;
+  onRefreshGameInfo?: (gameId: string) => PromiseLike<void>;
   type: string;
-  getBounds?: () => ClientRect;
-  container?: HTMLElement;
   onLaunch?: () => void;
   // artwork-only tile for tight spots like the Recently Managed dashlet:
   // hides the name (exposed as a tooltip on the tile instead) and reduces
@@ -58,8 +54,6 @@ type IProps = IBaseProps & IConnectedProps;
  * @class GameThumbnail
  */
 class GameThumbnail extends PureComponentEx<IProps, {}> {
-  private mRef = null;
-
   public render(): JSX.Element {
     const { t, active, className, compact, discovered, game, imageClassName, mods, profile, type } =
       this.props;
@@ -68,15 +62,7 @@ class GameThumbnail extends PureComponentEx<IProps, {}> {
       return null;
     }
 
-    // Prefer the Nexus "tile" art so it matches the website. Fall back to a
-    // local extension logo / imageURL when no Nexus tile can be resolved.
-    let logoPath: string | undefined = gameTileImageURL(game);
-    if (logoPath == null) {
-      logoPath =
-        game.extensionPath !== undefined && game.logo !== undefined
-          ? path.join(game.extensionPath, game.logo)
-          : game.imageURL;
-    }
+    const imgurl = gameArtURL(game);
 
     // Mod count should only be shown for Managed and Discovered games as
     //  the supported type suggests that the game has been removed from the machine.
@@ -92,21 +78,6 @@ class GameThumbnail extends PureComponentEx<IProps, {}> {
       "game-thumbnail",
       `game-thumbnail-${discovered !== false ? "discovered" : "undiscovered"}`,
     ];
-
-    let imgurl = null;
-    if (logoPath != null) {
-      let protocol = null;
-      try {
-        const parsedUrl = new URL(logoPath);
-        protocol = parsedUrl.protocol;
-      } catch (err) {
-        // If URL parsing fails, treat as file path
-      }
-      imgurl =
-        protocol !== null && protocol.startsWith("http")
-          ? logoPath
-          : url.pathToFileURL(logoPath).href;
-    }
 
     return (
       <Panel
@@ -168,32 +139,7 @@ class GameThumbnail extends PureComponentEx<IProps, {}> {
   }
 
   private renderMenu(): JSX.Element[] {
-    const { t, container, game, getBounds, onRefreshGameInfo, type } = this.props;
-    const gameInfoPopover = (
-      <Popover className="popover-game-info" id={`popover-info-${game.id}`}>
-        <Provider store={this.context.api.store}>
-          <IconBar
-            buttonType="text"
-            className="buttons"
-            collapse={false}
-            filter={this.lowPriorityButtons}
-            group={`game-${type}-buttons`}
-            id={`game-thumbnail-${game.id}`}
-            instanceId={game.id}
-            orientation="vertical"
-            staticElements={[]}
-            t={t}
-          />
-
-          <GameInfoPopover
-            game={game}
-            t={t}
-            onChange={this.redraw}
-            onRefreshGameInfo={onRefreshGameInfo}
-          />
-        </Provider>
-      </Popover>
-    );
+    const { t, game, onRefreshGameInfo, type } = this.props;
 
     return [
       <div className="hover-content" key="primary-buttons">
@@ -211,51 +157,51 @@ class GameThumbnail extends PureComponentEx<IProps, {}> {
           t={t}
         />
       </div>,
-      <OverlayTrigger
-        container={container}
-        getBounds={getBounds || this.getWindowBounds}
-        key="info-overlay"
-        orientation="horizontal"
-        overlay={gameInfoPopover}
-        rootClose={true}
-        shouldUpdatePosition={true}
-        trigger="click"
-        triggerRef={this.setRef}
-      >
-        <IconButton
-          className="game-thumbnail-info btn-embed"
-          icon="game-menu"
-          id={`btn-info-${game.id}`}
-          tooltip={t("Show Details")}
-        />
-      </OverlayTrigger>,
+      // `contents` so the wrapper the popover needs doesn't take part in the tile's
+      // layout, which positions the button itself.
+      <Popover className="contents" key="info-overlay">
+        {({ open }) => (
+          <>
+            <Tooltip content={t("Show Details")} disabled={open} placement="bottom">
+              <PopoverButton
+                appearance="weak"
+                aria-label={t("Show Details")}
+                brand="neutral"
+                className="game-thumbnail-info"
+                id={`btn-info-${game.id}`}
+                leftIcon={<Icon name="game-menu" />}
+              />
+            </Tooltip>
+
+            <PopoverPanel anchor={{ gap: 8, to: "bottom end" }} className="popover-game-info">
+              <div className="popover-content">
+                <Provider store={this.context.api.store}>
+                  <IconBar
+                    buttonType="text"
+                    className="buttons"
+                    collapse={false}
+                    filter={this.lowPriorityButtons}
+                    group={`game-${type}-buttons`}
+                    id={`game-thumbnail-${game.id}`}
+                    instanceId={game.id}
+                    orientation="vertical"
+                    staticElements={[]}
+                    t={t}
+                  />
+
+                  <GameInfoPopover game={game} t={t} onRefreshGameInfo={onRefreshGameInfo} />
+                </Provider>
+              </div>
+            </PopoverPanel>
+          </>
+        )}
+      </Popover>,
     ];
   }
 
   private priorityButtons = (action: IActionDefinition) => action.position < 100;
 
   private lowPriorityButtons = (action: IActionDefinition) => action.position >= 100;
-
-  private getWindowBounds = (): DOMRect => {
-    return {
-      top: 0,
-      left: 0,
-      height: window.innerHeight,
-      width: window.innerWidth,
-      bottom: window.innerHeight,
-      right: window.innerWidth,
-    } as any;
-  };
-
-  private setRef = (ref) => {
-    this.mRef = ref;
-  };
-
-  private redraw = () => {
-    if (this.mRef !== null) {
-      this.mRef.forceUpdate();
-    }
-  };
 }
 
 const emptyObj = {};

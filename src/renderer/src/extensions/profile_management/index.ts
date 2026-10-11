@@ -50,14 +50,13 @@ import {
   needToDeployForGame,
 } from "../../util/selectors";
 import { getSafe } from "../../util/storeHelper";
-import { batchDispatch, truthy } from "../../util/util";
+import { truthy } from "../../util/util";
 import { emitGameManaged, emitGameUnmanaged } from "../analytics/mixpanel/gameManageAnalytics";
 import { getGame, getGameStubDownloadInfo } from "../gamemode_management/util/getGame";
 import { ensureStagingDirectory } from "../mod_management/stagingDirectory";
 import { purgeMods } from "../mod_management/util/deploy";
 import { NoDeployment } from "../mod_management/util/exceptions";
 import {
-  forgetMod,
   removeProfile,
   setProfile,
   setProfileActivated,
@@ -73,6 +72,7 @@ import { syncFromProfile, syncToProfile } from "./sync";
 import { CorruptActiveProfile } from "./types/Errors";
 import type { IProfile } from "./types/IProfile";
 import type { IProfileFeature } from "./types/IProfileFeature";
+import { sanitizeProfile } from "./util/sanitizeProfile";
 import Connector from "./views/Connector";
 import ProfileView from "./views/ProfileView";
 import TransferDialog from "./views/TransferDialog";
@@ -89,24 +89,6 @@ function profilePath(profile: IProfile): string {
 
 function checkProfile(store: Redux.Store<any>, currentProfile: IProfile): PromiseBB<void> {
   return fs.ensureDirAsync(profilePath(currentProfile));
-}
-
-function sanitizeProfile(store: Redux.Store<any>, profile: IProfile): void {
-  const state: IState = store.getState();
-  const batched = [];
-  Object.keys(profile.modState || {}).forEach((modId) => {
-    if (getSafe(state.persistent.mods, [profile.gameId, modId], undefined) === undefined) {
-      log("debug", "removing info of missing mod from profile", {
-        profile: profile.id,
-        game: profile.gameId,
-        modId,
-      });
-      batched.push(forgetMod(profile.id, modId));
-    }
-  });
-  if (batched.length > 0) {
-    batchDispatch(store, batched);
-  }
 }
 
 function refreshProfile(
@@ -245,7 +227,8 @@ function activateGame(store: ThunkStore<IState>, gameId: string): PromiseBB<void
   }
 }
 
-function deploy(api: IExtensionApi, profileId: string): PromiseBB<void> {
+/** Deploys the profile unless it is its game's last active one with nothing pending. */
+function deploy(api: IExtensionApi, profileId: string | undefined, what: string): PromiseBB<void> {
   const state: IState = api.store.getState();
   if (profileId === undefined || state.persistent.profiles[profileId] === undefined) {
     return PromiseBB.resolve();
@@ -269,6 +252,8 @@ function deploy(api: IExtensionApi, profileId: string): PromiseBB<void> {
     return PromiseBB.resolve();
   }
 
+  log("info", `will deploy ${what}`, profileId);
+
   let lastProgress: number = Date.now();
 
   const watchdog = setInterval(() => {
@@ -284,12 +269,13 @@ function deploy(api: IExtensionApi, profileId: string): PromiseBB<void> {
     }
   }, 1000);
 
-  return new PromiseBB((resolve, reject) => {
+  return new PromiseBB<void>((resolve, reject) => {
     api.events.emit(
       "deploy-mods",
       onceCB((err: Error) => {
         clearInterval(watchdog);
         if (err === null) {
+          log("info", `did deploy ${what}`, profileId);
           resolve();
         } else {
           reject(err);
@@ -438,6 +424,17 @@ function genOnProfileChange(
 
         sanitizeProfile(store, profile);
 
+        // Cross-game: skip the outgoing profile and a last-active incoming one; deploy the
+        // incoming game's pending last-active profile first.
+        const switchesGame = oldProfile !== undefined && oldProfile.gameId !== profile.gameId;
+        const lastActiveId = lastActiveProfileForGame(state, profile.gameId);
+        const pendingId =
+          switchesGame && current !== lastActiveId && needToDeployForGame(state, profile.gameId)
+            ? lastActiveId
+            : undefined;
+        const prevId = switchesGame ? undefined : prev;
+        const nextId = switchesGame && current === lastActiveId ? undefined : current;
+
         return PromiseBB.resolve(
           withTrackedActivity(
             "vortex.profile-management",
@@ -450,22 +447,22 @@ function genOnProfileChange(
             () =>
               queue
                 .then(() => {
+                  if (pendingId === undefined) {
+                    return undefined;
+                  }
+                  return deploy(api, pendingId, "pending profile").then(() =>
+                    refreshProfile(store, profileById(api.getState(), pendingId), "import"),
+                  );
+                })
+                .then(() => {
                   log("debug", "starting refresh profile export");
                   return refreshProfile(store, profile, "export");
                 })
                 // ensure the old profile is synchronised before we switch, otherwise me might
                 // revert some changes
+                .then(() => deploy(api, prevId, "previously active profile"))
+                .then(() => deploy(api, nextId, "next active profile"))
                 .then(() => {
-                  log("info", "will deploy previously active profile", prev);
-                  return deploy(api, prev);
-                })
-                .then(() => {
-                  log("info", "did deploy previously active profile", prev);
-                  log("info", "will deploy next active profile", current);
-                  return deploy(api, current);
-                })
-                .then(() => {
-                  log("info", "did deploy next active profile", current);
                   const prof = profileById(api.store.getState() as IState, current);
                   if (prof === undefined) {
                     return PromiseBB.reject(
@@ -556,18 +553,10 @@ function manageGameUndiscovered(api: IExtensionApi, gameId: string): PromiseBB<v
     const stubDownloadInfo = getGameStubDownloadInfo(gameId);
     let extension: IExtensionDownloadInfo;
     if (stubDownloadInfo !== undefined) {
-      if (stubDownloadInfo.modId !== undefined && stubDownloadInfo.fileId === undefined) {
-        const manifestEntry = state.session.extensions.available.find(
-          (ext) => ext.modId === stubDownloadInfo.modId,
-        );
-        if (manifestEntry !== undefined) {
-          stubDownloadInfo.fileId = manifestEntry.fileId;
-        }
-      }
       extension = stubDownloadInfo;
     } else {
       extension = state.session.extensions.available.find(
-        (ext) => ext?.gameId === gameId || ext.name === gameId,
+        (ext) => ext?.gameDomain === gameId || ext.name === gameId,
       );
     }
     if (extension === undefined) {
@@ -602,7 +591,7 @@ function manageGameUndiscovered(api: IExtensionApi, gameId: string): PromiseBB<v
                 .then(() => api.emitAndAwait("install-extension", extension))
                 .then((results: boolean[]) => {
                   if (results.includes(true)) {
-                    relaunch(["--game", gameId]);
+                    relaunch(["--game", extension.name]);
                   }
                 })
                 .finally(() => {

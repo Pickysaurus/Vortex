@@ -1,4 +1,4 @@
-import { render, screen, waitFor, cleanup } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -21,13 +21,9 @@ vi.mock("../../../controls/ErrorBoundary", () => ({
 }));
 
 vi.mock("react-redux", () => ({
-  connect: () => (component: React.ComponentType<Record<string, unknown>>) => component,
-}));
-
-vi.mock("react-i18next", () => ({
-  withTranslation: () => (component: unknown) => component,
-  translate: () => (component: unknown) => component,
-  useTranslation: () => ({ t: (key: string) => key }),
+  connect:
+    () => (component: React.ComponentType<React.PropsWithChildren<Record<string, unknown>>>) =>
+      component,
 }));
 
 vi.mock("recharts", () => ({
@@ -47,16 +43,17 @@ vi.mock("recharts", () => ({
 
 import DownloadGraph from "./DownloadGraph";
 
-const Graph = DownloadGraph as unknown as React.ComponentType<{
-  t: (key: string) => string;
-  maxBandwidth: number;
-  speeds: number[];
-}>;
+const Graph = DownloadGraph as unknown as React.ComponentType<
+  React.PropsWithChildren<{
+    t: (key: string) => string;
+    maxBandwidth: number;
+    speeds: number[];
+  }>
+>;
 
 const t = (key: string) => key;
 
 afterEach(() => {
-  cleanup();
   resizeObserverInstances.length = 0;
   delete (globalThis as any).ResizeObserver;
 });
@@ -84,7 +81,9 @@ describe("DownloadGraph", () => {
     const observer = resizeObserverInstances[0];
     expect(observer.observe).toHaveBeenCalledTimes(1);
 
-    observer.callback([{ contentRect: { width: 512, height: 120 } }] as any, observer as any);
+    act(() =>
+      observer.callback([{ contentRect: { width: 512, height: 120 } }] as any, observer as any),
+    );
 
     await waitFor(() => {
       expect(screen.getByTestId("download-graph-chart")).toHaveAttribute("data-width", "512");

@@ -1,11 +1,22 @@
 import type * as React from "react";
 
+import type { IButtonBrand } from "../ui/components/button/Button";
+
 export interface IActionOptions {
   noCollapse?: boolean;
   namespace?: string;
   hollowIcon?: boolean;
   isClassicOnly?: boolean;
   isModernOnly?: boolean;
+  /** What the action has to say beyond its title, read on render and bracketed after it. */
+  notice?: () => string | undefined;
+  /** The colour the action asks for, read on render so it can follow state. */
+  brand?: () => IButtonBrand | undefined;
+  /**
+   * Whether the action sits on the toolbar until the user says otherwise, where that
+   * toolbar lets them choose. Ignored by one that doesn't.
+   */
+  pinned?: boolean;
 }
 
 export type ActionFunc = (instanceId: string | string[]) => IActionDefinition[];
@@ -20,7 +31,7 @@ export interface IActionDefinition {
   icon?: string;
   title?: string;
   data?: any;
-  component?: React.ComponentType<any>;
+  component?: React.ComponentType<React.PropsWithChildren<any>>;
   props?: () => any;
   action?: (instanceId: string | string[], data?: any) => void;
   subMenus?: IActionDefinition[] | ActionFunc;

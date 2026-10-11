@@ -3,7 +3,7 @@ import { pathToFileURL } from "url";
 
 import type * as nexusApi from "@nexusmods/nexus-api";
 import type { IRevision } from "@nexusmods/nexus-api";
-import { getErrorMessageOrDefault, unknownToError } from "@vortex/shared";
+import { getErrorMessageOrDefault, unknownToError, VortexProfileId } from "@vortex/shared";
 import Bluebird from "bluebird";
 import * as _ from "lodash";
 import memoize from "memoize-one";
@@ -29,7 +29,7 @@ import type { TFunction } from "../../util/i18n";
 import makeReactive from "../../util/makeReactive";
 import * as selectors from "../../util/selectors";
 import { getSafe } from "../../util/storeHelper";
-import { batchDispatch, setdefault, toPromise } from "../../util/util";
+import { batchDispatch, toPromise } from "../../util/util";
 import type { IDownload } from "../download_management/types/IDownload";
 import { getGame } from "../gamemode_management/util/getGame";
 import type { IMod, IModRule } from "../mod_management/types/IMod";
@@ -70,10 +70,12 @@ import type { CollectionPauseTrigger } from "./types/CollectionPauseTrigger";
 import type { ICollection } from "./types/ICollection";
 import type { IExtendedInterfaceProps } from "./types/IExtendedInterfaceProps";
 import { cloneCollection } from "./util/cloneCollection";
+import { collectionsByMod } from "./util/collectionsByMod";
 import { createCollection } from "./util/createCollection";
 import { genDefaultsAction } from "./util/defaults";
 import { addExtension } from "./util/extension";
 import InstallDriver from "./util/InstallDriver";
+import { canLinkProfile, findLinkedCollection, linkProfileToCollection } from "./util/profileLink";
 import { readCollection } from "./util/readCollection";
 import { getActiveInstallSession } from "./util/selectors";
 import { makeCollectionId } from "./util/transformCollection";
@@ -99,10 +101,12 @@ function isEditableCollection(state: IState, modIds: string[]): boolean {
 }
 
 function profileCollectionExists(api: IExtensionApi, profileId: string) {
-  const state = api.store.getState();
+  const state: IState = api.store.getState();
   const gameMode = selectors.activeGameId(state);
-  const mods = state.persistent.mods[gameMode];
-  return mods[makeCollectionId(profileId)] !== undefined;
+  return (
+    findLinkedCollection(selectors.modsForGame(state, gameMode), VortexProfileId(profileId)) !==
+    undefined
+  );
 }
 
 function onlyLocalRules(rule: IModRule) {
@@ -565,7 +569,9 @@ function genAttributeExtractor(api: IExtensionApi) {
     const revisionId = modInfo.download?.modInfo?.nexus?.ids?.revisionId;
     const collectionSlug = modInfo.download?.modInfo?.nexus?.ids?.collectionSlug;
     const revisionNumber = modInfo.download?.modInfo?.nexus?.ids?.revisionNumber;
-    const referenceTag = modInfo.download?.modInfo?.referenceTag;
+    // the rule being installed names the tag for this collection's copy; the download may have been
+    // fetched by another collection and carry its tag first
+    const referenceTag = modInfo.modReference?.tag ?? modInfo.download?.modInfo?.referenceTag;
 
     const result: { [key: string]: any } = {
       collectionId,
@@ -577,29 +583,6 @@ function genAttributeExtractor(api: IExtensionApi) {
 
     return Bluebird.resolve(result);
   };
-}
-
-function generateCollectionMap(mods: { [modId: string]: IMod }): {
-  [modId: string]: IMod[];
-} {
-  const collections = Object.values(mods).filter((mod) => mod.type === MOD_TYPE);
-
-  const result: { [modId: string]: IMod[] } = {};
-
-  collections.forEach((coll) =>
-    (coll.rules ?? []).forEach((rule) => {
-      if (rule.reference.id !== undefined) {
-        setdefault(result, rule.reference.id, []).push(coll);
-      } else {
-        const installed = findModByRef(rule.reference, mods);
-        if (installed !== undefined) {
-          setdefault(result, installed.id, []).push(coll);
-        }
-      }
-    }),
-  );
-
-  return result;
 }
 
 interface IModTable {
@@ -857,7 +840,7 @@ function register(context: IExtensionContext, collectionsCB: ICallbackMap) {
   const emptyArray = [];
   const emptyObj = {};
 
-  const collectionsMapFunc = memoize(generateCollectionMap, collectionListEqual);
+  const collectionsMapFunc = memoize(collectionsByMod, collectionListEqual);
 
   const collectionsMap = () =>
     collectionsMapFunc(
@@ -1008,6 +991,21 @@ function register(context: IExtensionContext, collectionsCB: ICallbackMap) {
   );
 
   context.registerAction(
+    "profile-actions",
+    150,
+    "highlight-lab",
+    {},
+    "Link Collection",
+    (profileIds: string[]) => {
+      linkProfileToCollection(context.api, VortexProfileId(profileIds[0])).catch((err: unknown) =>
+        context.api.showErrorNotification("Failed to link collection", unknownToError(err)),
+      );
+    },
+    (profileIds: string[]) =>
+      canLinkProfile(context.api.getState(), VortexProfileId(profileIds[0])),
+  );
+
+  context.registerAction(
     "mods-action-icons",
     300,
     "collection",
@@ -1099,7 +1097,7 @@ function register(context: IExtensionContext, collectionsCB: ICallbackMap) {
     clone: (gameId: string, collection: ICollection, from: IMod, to: IMod) => Promise<void>,
     title: (t: TFunction) => string,
     condition?: (state: IState, gameId: string) => boolean,
-    editComponent?: React.ComponentType<IExtendedInterfaceProps>,
+    editComponent?: React.ComponentType<React.PropsWithChildren<IExtendedInterfaceProps>>,
   ) => {
     addExtension({
       id,

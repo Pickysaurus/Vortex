@@ -1,9 +1,14 @@
 import React, { forwardRef, type HTMLAttributes, useCallback, useMemo, useState } from "react";
+import { useSelector } from "react-redux";
 
+import type { IState } from "@/types/IState";
 import { joinClasses } from "@/ui/utils/joinClasses";
 
-import { type IPageScrollContext, PageScrollContext } from "./Page.context";
+import { type IPageContext, PageContext } from "./Page.context";
 import { PageContent } from "./PageContent";
+
+const selectAlwaysCompactHeaders = (state: IState) =>
+  state.settings.interface.alwaysCompactHeaders === true;
 
 export interface IPageProps extends HTMLAttributes<HTMLDivElement> {
   // Legacy callback ref, mirrors MainPage's domRef.
@@ -17,7 +22,7 @@ export interface IPageProps extends HTMLAttributes<HTMLDivElement> {
   // The owning page's id. When set, the root gets `id="page-<pageId>"`, mirroring
   // the id the legacy MainPage applied (some styling/selectors may rely on it).
   pageId?: string;
-  // By default the content is centred and capped at `max-w-7xl`. Set this to let
+  // By default the content is centred and capped at `max-w-8xl`. Set this to let
   // it fill the full width (e.g. grids that want the whole viewport).
   isFullWidth?: boolean;
 }
@@ -31,8 +36,13 @@ export interface IPageProps extends HTMLAttributes<HTMLDivElement> {
  * region above the scrolling content, set `scrollable={false}` and compose a
  * `PageHeader` (stays fixed) with a `PageScroll` (the part that scrolls).
  *
+ * It owns the scroll state those two share, and with it whether the header
+ * renders compact: scrolling away from the top, or the always-compact-headers
+ * setting, which pins the compact form on and so takes the shrink animation
+ * out of the page.
+ *
  * Children render inside a content box that is centred and capped at
- * `max-w-7xl`; the root itself stays full-width so its scrollbar sits at the
+ * `max-w-8xl`; the root itself stays full-width so its scrollbar sits at the
  * viewport edge. `className` styles that content box. Pass `isFullWidth` to
  * drop the cap for full-bleed layouts.
  */
@@ -52,9 +62,10 @@ export const Page = forwardRef<HTMLDivElement, IPageProps>(
     ref,
   ) => {
     const [scrolled, setScrolled] = useState(false);
-    const scrollContext = useMemo<IPageScrollContext>(
-      () => ({ scrolled, setScrolled }),
-      [scrolled],
+    const alwaysCompact = useSelector(selectAlwaysCompactHeaders);
+    const pageContext = useMemo<IPageContext>(
+      () => ({ scrolled, setScrolled, compact: alwaysCompact || scrolled }),
+      [alwaysCompact, scrolled],
     );
 
     const setRef = useCallback(
@@ -72,7 +83,7 @@ export const Page = forwardRef<HTMLDivElement, IPageProps>(
     );
 
     return (
-      <PageScrollContext.Provider value={scrollContext}>
+      <PageContext.Provider value={pageContext}>
         <div
           className={joinClasses([
             "my-0.5 mr-0.5 flex flex-1 flex-col transition-opacity",
@@ -92,7 +103,7 @@ export const Page = forwardRef<HTMLDivElement, IPageProps>(
             {children}
           </PageContent>
         </div>
-      </PageScrollContext.Provider>
+      </PageContext.Provider>
     );
   },
 );

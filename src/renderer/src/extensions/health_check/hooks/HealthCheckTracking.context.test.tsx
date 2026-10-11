@@ -6,9 +6,9 @@
  */
 import { EventEmitter } from "events";
 
-import { cleanup, render } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import React from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { IExtensionApi } from "@/types/IExtensionContext";
 
@@ -46,10 +46,6 @@ const modEntry: IHealthCheckEntry = {
   resolutionType: "install",
   data: {},
 };
-
-// vitest runs without globals here, so RTL never auto-cleans; without this each
-// render leaks into document.body.
-afterEach(cleanup);
 
 /** Emits back_clicked with only its own properties — the identity should be supplied. */
 const BackClicker = () => {
@@ -152,6 +148,25 @@ describe("HealthCheckTracking context", () => {
       fileEntry.id,
       fileEntry.id,
     ]);
+  });
+
+  it("carries source_mod_uid when the entry names its source mod, and omits it otherwise", () => {
+    const { api, events } = harness();
+
+    render(
+      <HealthCheckTrackingProvider api={api}>
+        <IssueProvider entry={{ ...fileEntry, sourceModUID: "uid-42" }}>
+          <Unhider />
+        </IssueProvider>
+
+        <IssueProvider entry={{ ...modEntry, sourceModUID: "" }}>
+          <Unhider />
+        </IssueProvider>
+      </HealthCheckTrackingProvider>,
+    );
+
+    expect(events[0].properties.source_mod_uid).toBe("uid-42");
+    expect(events[1].properties).not.toHaveProperty("source_mod_uid");
   });
 
   it("omits the identity for a premium surface rendered page-wide", () => {

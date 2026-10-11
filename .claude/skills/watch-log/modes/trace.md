@@ -1,15 +1,20 @@
 # §E — Trace a workflow lifecycle (top-to-bottom)
 
-Prereq: `reference.md` (core) + `shared/lifecycle.md` + `shared/sessions.md`.
+Prereq: `reference.md` (core) + `shared/lifecycle.md` + `shared/sessions.md`
+(+ `shared/gamebryo.md` when tracing a deployment of a gamebryo game: the deploy → sort
+invariants).
 
-Trace one **download / install / collection / deployment** from its first to its last
-log entry. Scope to one session (default latest, per §B / investigate.md); say which.
+Trace one **download / install / collection / deployment / profile switch** from its
+first to its last log entry. Scope to one session (default latest, per §B / investigate.md);
+say which.
 
 1. **Identify the entity and its thread key** from `$ARGUMENTS`:
     - a **mod id / archive name** (e.g. `Atomic Lust-31853-2-7b-…`) → install thread,
       key = `modId` / `archivePath`.
     - an **nxm url** or **downloadId** / **collationId** → download thread.
     - a **collection name / id** → collection thread (and its member installs).
+    - a **profile id** or **profile switch** (optionally a game) → profile thread, key =
+      `from` / `to` / `current`.
     - the word **deployment / deploy / purge** (optionally a game) → deploy thread.
       If ambiguous, grep the chosen log for the term and list the candidate entities
       (with their ids) for the user to pick.
@@ -25,7 +30,8 @@ log entry. Scope to one session (default latest, per §B / investigate.md); say 
    install prefer the logged `duration` from `Installation completed successfully`.
 4. **Outcome & gaps:** classify as **completed** (terminal success marker present —
    `finish mod install {outcome:"success"}` / `Installation completed successfully` /
-   `download completed` / final `deployment {…}` / `postprocess collection`),
+   `download completed` / final `deployment {…}` / `postprocess collection` /
+   `switched to profile`),
    **failed** (an `[ERRO]` on the thread, or `outcome` != success), or **incomplete /
    stuck** (a start phase with **no** terminal phase before session end — the last
    phase reached pinpoints where it wedged, same expected-but-missing logic as §D).
@@ -36,6 +42,10 @@ log entry. Scope to one session (default latest, per §B / investigate.md); say 
 collection {totalMods, missing}` → `postprocess collection`) and a **per-member
    roll-up** (each member's modId, outcome, duration), flagging members that failed
    or never reached a terminal phase. Note the `collationId` linking the members'
-   downloads.
+   downloads. **Always state whether the collection is fully installed**, using the
+   fully-installed verdict in §F (`modes/collection-install.md`): `installed =
+   (totalMods - missing) + completed-this-run` vs `totalMods`, postprocess reached,
+   shortfall classified (failed / stuck / skipped-or-unaccounted - skips write no
+   log line).
 7. **Output:** the phase timeline with Δs, the outcome verdict, total/longest-step
    timing, interleaved errors/warnings, and (collections) the per-member table.

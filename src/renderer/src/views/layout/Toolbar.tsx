@@ -19,7 +19,7 @@ import { QuickLauncher } from "../QuickLauncher";
 const applicationButtons: IActionDefinition[] = [];
 const globalButtons: IActionDefinition[] = [];
 
-export const Toolbar: FC = () => {
+export const Toolbar: FC<React.PropsWithChildren<unknown>> = () => {
   const { t } = useTranslation();
   const customTitlebar = useSelector((state: IState) => state.settings.window.customTitlebar);
   const version = useSelector((state: IState) => state.app.appVersion);
@@ -53,14 +53,6 @@ export const Toolbar: FC = () => {
 
       <div className="main-toolbar-right">
         <div className="toolbar-version">
-          {process.env.IS_PREVIEW_BUILD === "true" ? (
-            <div className="toolbar-version-container toolbar-version-staging">
-              <Icon name="conflict" />
-
-              <div className="toolbar-version-text">Staging</div>
-            </div>
-          ) : null}
-
           {process.env.NODE_ENV === "development" ? (
             <div className="toolbar-version-container toolbar-version-dev">
               <Icon name="mods" />

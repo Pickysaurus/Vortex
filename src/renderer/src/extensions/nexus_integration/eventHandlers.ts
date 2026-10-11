@@ -24,9 +24,9 @@ import type {
   RatingOptions,
 } from "@nexusmods/nexus-api";
 import type Nexus from "@nexusmods/nexus-api";
-import { NexusError, RateLimitError, TimeoutError } from "@nexusmods/nexus-api";
-import { getErrorMessageOrDefault, unknownToError } from "@vortex/shared";
-import { AlreadyDownloaded, DownloadIsHTML } from "@vortex/shared/errors";
+import { NexusError, TimeoutError } from "@nexusmods/nexus-api";
+import { getErrorMessageOrDefault, parseError, unknownToError } from "@vortex/shared";
+import { AlreadyDownloaded } from "@vortex/shared/errors";
 import Bluebird from "bluebird";
 import * as semver from "semver";
 
@@ -38,7 +38,6 @@ import { DataInvalid, ProcessCanceled, UserCanceled } from "../../util/CustomErr
 import Debouncer from "../../util/Debouncer";
 import * as fs from "../../util/fs";
 import { calcDuration, showError } from "../../util/message";
-import { upload } from "../../util/network";
 import opn from "../../util/opn";
 import {
   activeGameId,
@@ -56,8 +55,10 @@ import { setUpdatingMods } from "../mod_management/actions/session";
 import type { IModListItem } from "../news_dashlet/types";
 import { setUserInfo } from "./actions/persistent";
 import { NEXUS_BASE_URL, NEXUS_GAMES_URL } from "./constants";
+import { ensureFreshMembership, refreshMembership } from "./membership";
 import { nxmModUrl } from "./NXMUrl";
-import { isLoggedIn } from "./selectors";
+import { isRateLimited, notifyRateLimited } from "./rateLimit";
+import { isLoggedIn, isPremium } from "./selectors";
 import type { IValidateKeyDataV2 } from "./types/IValidateKeyData";
 import {
   checkModVersionsImpl,
@@ -70,7 +71,6 @@ import {
   resolveGraphError,
   startDownload,
   updateUserInfoFromRefreshedToken,
-  transformUserInfoFromApi,
   updateKey,
   updateToken,
 } from "./util";
@@ -84,6 +84,8 @@ import {
   MY_COLLECTIONS_SEARCH_QUERY,
 } from "./util/graphQueries";
 import submitFeedback from "./util/submitFeedback";
+import type { SubmitCollectionOptions } from "./util_v3/submitCollectionV3";
+import { submitCollectionV3 } from "./util_v3/submitCollectionV3";
 
 export function onChangeDownloads(api: IExtensionApi, nexus: Nexus) {
   const state: IState = api.store.getState();
@@ -365,14 +367,17 @@ function downloadFile(
 ): Bluebird<string> {
   const state: IState = api.getState();
   const gameId = game?.id ?? SITE_ID;
-  if (
-    game != null &&
-    gameId !== SITE_ID &&
-    !getSafe(state, ["persistent", "nexus", "userInfo", "isPremium"], false)
-  ) {
-    // nexusmods can't let users download files directly from client, without
-    // showing ads
-    return Bluebird.reject(new ProcessCanceled("Only available to premium users"));
+  if (game != null && gameId !== SITE_ID && !isPremium(state)) {
+    // The cached membership is the only thing saying no, and a plan bought on the website pushes
+    // nothing to Vortex - so confirm it before refusing a download the user can now make.
+    return Bluebird.resolve(ensureFreshMembership(api, nexus)).then(() => {
+      if (isPremium(api.getState())) {
+        return downloadFile(api, nexus, game, modId, fileId, fileName, allowInstall);
+      }
+      // nexusmods can't let users download files directly from client, without
+      // showing ads
+      return Bluebird.reject(new ProcessCanceled("Only available to premium users"));
+    });
   }
   // TODO: Need some way to identify if this request is actually for a nexus mod
   const url = nxmModUrl(game, gameId, modId, fileId);
@@ -517,7 +522,13 @@ export function onModUpdate(api: IExtensionApi, nexus: Nexus) {
           api.events.emit("start-install-download", downloadId);
         }
       })
-      .catch(DownloadIsHTML, (err) => undefined)
+      .catch((err: unknown) => {
+        // "DownloadIsHTML": the server answered the file request with a web page
+        // (consent flow, redirect, dead link). Swallow it; the caller has already
+        // emitted the appropriate state change for "no download started".
+        if (parseError(err).data.kind === "download:is-html") return undefined;
+        throw err;
+      })
       .catch(DataInvalid, () => {
         const url = nxmModUrl(game, gameId, modId, fileId);
         api.showErrorNotification("Invalid URL", url, { allowReport: false });
@@ -732,6 +743,10 @@ export function onGetNexusCollectionRevision(
         revisionNumber > 0 ? revisionNumber : undefined,
       ),
     ).catch((err: NexusError & { collectionSlug?: string; revisionNumber?: number }) => {
+      if (isRateLimited(err)) {
+        notifyRateLimited(api);
+        return Bluebird.resolve(undefined);
+      }
       const message = getErrorMessageOrDefault(err);
       const isRevisionUnavailable = [
         "NOT_FOUND",
@@ -928,7 +943,7 @@ export function onGetModRequirements(
       })
       .catch((err) => {
         const details = { uidCount: uids.length };
-        if (err instanceof RateLimitError) {
+        if (isRateLimited(err)) {
           log("warn", "Rate limited when fetching mod requirements", details);
         } else if (err instanceof TimeoutError) {
           log("warn", "Timeout when fetching mod requirements", details);
@@ -939,8 +954,37 @@ export function onGetModRequirements(
             ...graphErrorContext(err),
           });
         }
-        return Bluebird.resolve({});
+        // Rethrow: resolving to {} made "this mod has no requirements" and "we could not
+        // ask" indistinguishable, so a rate limit or outage was reported to the user as a
+        // clean bill of health. The caller decides what an incomplete run means.
+        return Bluebird.reject(err);
       });
+  };
+}
+
+/**
+ * Fetches endorsement counts for the given mod UIDs in one batched query.
+ * The result is keyed by UID; mods the query cannot resolve are omitted.
+ */
+export function onGetModEndorsementCounts(
+  nexus: Nexus,
+): (uids: string[]) => Bluebird<Record<string, number>> {
+  return (uids: string[]) => {
+    if (uids.length === 0) {
+      return Bluebird.resolve({});
+    }
+
+    return Bluebird.resolve(nexus.modsByUid({ uid: true, endorsements: true }, uids)).then(
+      (mods) => {
+        const result: Record<string, number> = {};
+        for (const mod of mods) {
+          if (mod.uid !== undefined && mod.endorsements !== undefined) {
+            result[mod.uid] = mod.endorsements;
+          }
+        }
+        return result;
+      },
+    );
   };
 }
 
@@ -1129,52 +1173,17 @@ export function onSubmitFeedback(nexus: Nexus) {
   };
 }
 
-function sendCollection(
-  nexus: Nexus,
-  collectionInfo: ICollectionManifest,
-  collectionId: number,
-  uuid: string,
-) {
-  if (collectionId === undefined) {
-    return nexus.createCollection(
-      {
-        adultContent: false,
-        collectionManifest: collectionInfo,
-        collectionSchemaId: 1,
-      },
-      uuid,
-    );
-  } else {
-    return nexus.editCollection(collectionId as any, collectionInfo.info.name).then(() =>
-      nexus.createOrUpdateRevision(
-        {
-          adultContent: false,
-          collectionManifest: collectionInfo,
-          collectionSchemaId: 1,
-        },
-        uuid,
-        collectionId,
-      ),
-    );
-  }
-}
-
-export function onSubmitCollection(nexus: Nexus) {
+export function onSubmitCollection(api: IExtensionApi) {
   return (
     collectionInfo: ICollectionManifest,
     assetFilePath: string,
     collectionId: number,
     callback: (err: Error, response?: any) => void,
+    // Optional: an emitter that neither reports progress nor offers a way to
+    // stop the upload simply omits it.
+    options: SubmitCollectionOptions = {},
   ) => {
-    nexus
-      .getRevisionUploadUrl()
-      .then(({ url, uuid }) => {
-        return fs
-          .statAsync(assetFilePath)
-          .then((stat) => upload(url, fs.createReadStream(assetFilePath), stat.size))
-          .then(() => uuid);
-      })
-      .then((uuid: string) => sendCollection(nexus, collectionInfo, collectionId, uuid))
+    submitCollectionV3(api, collectionInfo, assetFilePath, collectionId || undefined, options)
       .then((response) => callback(null, response))
       .catch((err) => callback(unknownToError(err)));
   };
@@ -1236,32 +1245,21 @@ export function onGetLatestMods(api: IExtensionApi, nexus: Nexus) {
   };
 }
 
+/**
+ * Handles the `refresh-user-info` event. It goes through refreshMembership so a scheduled re-read
+ * shares the in-flight request and the freshness stamp with the callers that await one.
+ *
+ * The logged-out check belongs here rather than in refreshMembership: several places raise this
+ * event and not all of them check first, and a read without credentials raises an error toast.
+ */
 export function onRefreshUserInfo(nexus: Nexus, api: IExtensionApi) {
   return (): Bluebird<void> => {
-    // only called from the global menu item
+    if (!isLoggedIn(api.getState())) {
+      log("warn", "onRefreshUserInfo() not logged in");
+      return Bluebird.resolve();
+    }
 
-    //const token = getOAuthTokenFromState(api);
-
-    log("info", "onRefreshUserInfo() started");
-
-    // we have an oauth token in state
-    //if(token !== undefined) {
-    // get userinfo from api
-    return Bluebird.resolve(nexus.getUserInfo())
-      .then((apiUserInfo) => {
-        api.store.dispatch(setUserInfo(transformUserInfoFromApi(apiUserInfo)));
-        // don't log the response payload: it contains PII (email, age verification, preferences)
-        log("info", "onRefreshUserInfo() user info updated");
-      })
-      .catch((err) => {
-        log("error", `onRefreshUserInfo() nexus.getUserInfo response ${err.message}`, err);
-        showError(api.store.dispatch, "An error occurred refreshing user info", err, {
-          allowReport: false,
-        });
-      });
-    //} else {
-    //  log('warn', 'onRefreshUserInfo() no oauth token');
-    //}
+    return Bluebird.resolve(refreshMembership(api, nexus)).then(() => undefined);
   };
 }
 
@@ -1340,6 +1338,11 @@ export function onCheckModsVersion(
           }
           return Bluebird.resolve(modIds);
         })
+        .catch(isRateLimited, () => {
+          // before the NexusError catch below, which would report a 429 as an update-check failure
+          notifyRateLimited(api);
+          return Bluebird.resolve([]);
+        })
         .catch(NexusError, (err) => {
           showError(api.store.dispatch, "An error occurred checking for mod updates", err, {
             allowReport: false,
@@ -1348,12 +1351,6 @@ export function onCheckModsVersion(
         })
         .catch(TimeoutError, (err) => {
           showError(api.store.dispatch, "An error occurred checking for mod updates", err, {
-            allowReport: false,
-          });
-          return Bluebird.resolve([]);
-        })
-        .catch(RateLimitError, (err) => {
-          showError(api.store.dispatch, "Rate limit exceeded, please try again later", err, {
             allowReport: false,
           });
           return Bluebird.resolve([]);

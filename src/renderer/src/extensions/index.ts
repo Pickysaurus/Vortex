@@ -2,7 +2,6 @@
 // on the extensions and re-compiles them properly. They are completely
 // removed during compilation
 import {} from "./about_dialog";
-import {} from "./adaptor_bridge";
 import {} from "./analytics";
 import {} from "./browse_nexus";
 import {} from "./browser";
@@ -17,7 +16,6 @@ import {} from "./file_based_loadorder";
 import {} from "./file_preview";
 import {} from "./firststeps_dashlet";
 import {} from "./gamemode_management";
-import {} from "./gameversion_management";
 import {} from "./hardlink_activator";
 import {} from "./health_check";
 import {} from "./history_management";

@@ -16,6 +16,8 @@ import type * as Redux from "redux";
 import { createSelector } from "reselect";
 import * as semver from "semver";
 
+import * as bcp47 from "@/bcp47";
+
 import { setAttributeFilter, setAttributeSort } from "../../../../actions/tables";
 import { ComponentEx } from "../../../../controls/ComponentEx";
 import FlexLayout from "../../../../controls/FlexLayout";
@@ -55,7 +57,11 @@ import type { IProfile, IProfileMod } from "../../../profile_management/types/IP
 import { showUsageInstruction } from "../../../settings_interface/actions/interface";
 import { AUTHOR_UNKNOWN, AVATAR_FALLBACK } from "../../constants";
 import type { ICollectionItemRow } from "../../installSession/itemRows";
-import { buildCollectionItemRows } from "../../installSession/itemRows";
+import {
+  buildCollectionItemRows,
+  collectRemovalTargets,
+  isRemovableItem,
+} from "../../installSession/itemRows";
 import type InstallDriver from "../../util/InstallDriver";
 import CollectionInstructions from "./CollectionInstructions";
 import CollectionItemStatus from "./CollectionItemStatus";
@@ -86,7 +92,7 @@ interface IConnectedProps {
   userInfo: any;
   showPremiumAd: boolean;
   votedSuccess: RatingOptions;
-  activity: { [id: string]: string };
+  activity: { [id: string]: string[] };
   language: string;
   overlays: { [id: string]: IOverlay };
   collectionInfo: ICollection;
@@ -119,7 +125,7 @@ const getCollator = (() => {
   return (locale: string): Intl.Collator => {
     if (collator === undefined || locale !== language) {
       language = locale;
-      collator = new Intl.Collator(locale, { sensitivity: "base" });
+      collator = bcp47.getCollator(locale);
     }
     return collator;
   };
@@ -201,14 +207,14 @@ class CollectionPage extends ComponentEx<IProps, IComponentState> {
         icon: "delete",
         title: "Remove",
         action: this.removeSelected,
-        condition: (instanceId) => {
+        condition: (instanceIds) => {
           const isInstallingCollection = getCollectionActiveSession(this.context.api.getState());
           if (isInstallingCollection) {
             return false;
           }
-          return typeof instanceId === "string"
-            ? ["downloaded", "installed"].includes(this.props.itemRows[instanceId].status)
-            : true;
+          // offered as long as one selected row can act on it; removeSelected drops the rest
+          // by the same predicate, so the action always has something to do
+          return arr(instanceIds).some((id) => isRemovableItem(this.props.itemRows[id]));
         },
         hotKey: { code: 46 },
       },
@@ -640,6 +646,7 @@ class CollectionPage extends ComponentEx<IProps, IComponentState> {
                 <Panel.Body>
                   <Table
                     actions={this.mModActions}
+                    analyticsId="collection-mods-view"
                     data={itemRows}
                     showDetails={false}
                     staticElements={this.mAttributes}
@@ -910,23 +917,18 @@ class CollectionPage extends ComponentEx<IProps, IComponentState> {
     if (isInstallingCollection) {
       return;
     }
-    const { t, collection, profile, onRemoveRule } = this.props;
-    const { itemRows } = this.props;
+    const { t, collection, downloads, itemRows, mods, profile, onRemoveRule } = this.props;
 
-    const filteredIds = modIds
-      .filter((modId) => itemRows[modId] !== undefined)
-      .filter(
-        (modId) => ["downloaded", "installed", "pending"].indexOf(itemRows[modId].status) !== -1,
-      );
+    const rows = modIds.map((modId) => itemRows[modId]).filter(isRemovableItem);
 
-    if (filteredIds.length === 0) {
+    if (rows.length === 0) {
       return;
     }
 
-    const modNames = filteredIds.map((modId) =>
-      itemRows[modId].status !== "pending"
-        ? renderModName(itemRows[modId], { version: true })
-        : renderModReference(itemRows[modId].collectionRule.reference, undefined),
+    const modNames = rows.map((row) =>
+      row.status !== "pending"
+        ? renderModName(row, { version: true })
+        : renderModReference(row.collectionRule.reference, undefined),
     );
 
     const checkboxes = [
@@ -948,8 +950,8 @@ class CollectionPage extends ComponentEx<IProps, IComponentState> {
         "Confirm removal",
         {
           text: t("Do you really want to remove this mod?", {
-            count: filteredIds.length,
-            replace: { count: filteredIds.length },
+            count: rows.length,
+            replace: { count: rows.length },
           }),
           message: modNames.join("\n"),
           checkboxes,
@@ -961,24 +963,11 @@ class CollectionPage extends ComponentEx<IProps, IComponentState> {
         const removeArchive = result.action === "Remove" && result.input.archive;
         const removeRule = result.action === "Remove" && result.input.collection;
 
-        const wereInstalled = filteredIds
-          .filter((key) => itemRows[key] !== undefined && itemRows[key].status === "installed")
-          .map((key) => itemRows[key].id);
-
-        const archiveIds = filteredIds
-          .filter(
-            (key) =>
-              itemRows[key] !== undefined &&
-              ["downloaded", "installed"].includes(itemRows[key].status) &&
-              itemRows[key].archiveId !== undefined,
-          )
-          .map((key) => itemRows[key].archiveId);
-
-        const rulesToRemove = filteredIds.filter((key) => itemRows[key] !== undefined);
+        const { installedModIds, archiveIds } = collectRemovalTargets(rows, mods, downloads);
 
         return Bluebird.resolve(
           doRemoveMods
-            ? removeMods(this.context.api, profile.gameId, wereInstalled)
+            ? removeMods(this.context.api, profile.gameId, installedModIds)
             : Promise.resolve(),
         )
           .then(() => {
@@ -993,8 +982,8 @@ class CollectionPage extends ComponentEx<IProps, IComponentState> {
           })
           .then(() => {
             if (removeRule) {
-              rulesToRemove.forEach((key) => {
-                onRemoveRule(profile.gameId, collection.id, itemRows[key].collectionRule);
+              rows.forEach((row) => {
+                onRemoveRule(profile.gameId, collection.id, row.collectionRule);
               });
             }
           });
@@ -1124,4 +1113,4 @@ function mapDispatchToProps(dispatch: Redux.Dispatch): IActionProps {
 export default connect(
   makeMapStateToProps,
   mapDispatchToProps,
-)(CollectionPage) as any as React.ComponentType<ICollectionPageProps>;
+)(CollectionPage) as any as React.ComponentType<React.PropsWithChildren<ICollectionPageProps>>;

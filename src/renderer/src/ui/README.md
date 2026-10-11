@@ -7,16 +7,24 @@ Components adapted from the web team's "next" project for use in Vortex.
 ```
 ui/
 ├── components/
+│   ├── alert/           - Full-width page-level message bar (replaces Bootstrap Alert)
+│   ├── badges/          - Small badges marking what something is
+│   │   ├── nexus_badge/ - The Nexus Mods logo in its own colours
+│   │   └── premium_badge/ - Premium diamond badge
 │   ├── bullet/          - Small rotated-square dot used as an inline marker/separator
 │   ├── button/          - Button system (brand × appearance matrix)
 │   ├── collectiontile/  - Collection card with image, metadata, and actions
 │   ├── dropdown/        - Dropdown menu (Headless UI Menu)
 │   ├── form/            - Form components
-│   │   ├── checkbox/    - Checkbox input
-│   │   ├── formfield/   - Form field wrapper with labels and validation
-│   │   ├── input/       - Text input with validation
-│   │   ├── select/      - Select dropdown with custom styling
-│   │   └── switch/      - Tri-state toggle switch (off / on / semi-on)
+│   │   ├── checkbox/    - Bare checkbox, with indeterminate (Headless UI Checkbox)
+│   │   ├── checkbox_field/ - Checkbox with its label beside it, hints and error
+│   │   ├── field/       - Field, Label, Description, ErrorMessage, CharacterCount (Headless UI Field)
+│   │   ├── input/       - Bare text input (Headless UI Input)
+│   │   ├── select/      - Bare native select with its chevron (Headless UI Select)
+│   │   ├── select_field/ - Select with its label, hints and error
+│   │   ├── switch/      - Bare tri-state switch: off / on / semi-on (Headless UI Checkbox)
+│   │   ├── switch_field/ - Switch with its label beside it and hints under both
+│   │   └── text_field/  - Text input with its label, hints, error and character count
 │   ├── icon/            - Icon rendering (MDI + Nexus custom icons)
 │   ├── image/           - Image wrapper with aspect ratios and fallback (+ adult-aware variant)
 │   ├── listbox/         - Listbox select (Headless UI Listbox)
@@ -28,11 +36,11 @@ ui/
 │   ├── pagination/      - Pagination controls with jump-to-page
 │   ├── picker/          - Single-value selector (Headless UI Listbox)
 │   ├── pill/            - Compact rounded label for tags and statuses
-│   ├── popover/         - Floating panel of interactive content (Headless UI Popover)
-│   ├── premium_badge/   - Premium diamond badge
-│   ├── table/           - Data table (sort, filter, group, column toggle, optional pagination)
+│   ├── popover/         - Floating panel of interactive content, or a menu of actions (Headless UI Popover)
+│   ├── table/           - Column-driven grid table (work in progress, behind a dev switch)
 │   ├── tabs/            - Tabbed interface with context-based state
 │   ├── toolbar/         - Horizontal toolbar; groups collapse overflow into a kebab dropdown
+│   ├── tooltip/         - Rich, collision-aware tooltip (Floating UI)
 │   └── typography/      - Typography system (heading, title, body)
 ├── lib/
 │   └── icon_paths/      - 34 custom Nexus Mods SVG icon paths
@@ -102,7 +110,7 @@ import { Button } from "../../ui/components/button/Button";
 <Button>Click Me</Button>
 
 // Only override what differs from the default
-<Button size="xs">Small</Button>
+<Button size="sm">Small</Button>
 <Button brand="neutral" appearance="subdued">Outlined</Button>
 <Button brand="neutral" appearance="weak">Quiet</Button>
 <Button brand="success">Saved</Button>
@@ -116,11 +124,14 @@ import { mdiDownload } from "@mdi/js";
 
 // Loading state
 <Button isLoading>Processing...</Button>
+
+// Disclosure toggle: keeps aria-expanded, without the menu-trigger "open" highlight
+<Button aria-expanded={!collapsed} hasExpandedStyle={false} leftIconPath={mdiChevronUp} />
 ```
 
-**Brands:** `primary`, `info`, `neutral`, `success`, `premium`
-**Appearances:** `strong` (solid fill), `moderate` (subtle surface), `subdued` (outline), `weak` (text only)
-**Sizes:** `xs`, `sm`, `md`
+**Brands:** `primary`, `info`, `neutral`, `success`, `premium`, `danger`
+**Appearances:** `strong` (solid fill), `moderate` (subtle surface), `subdued` (outline), `weak` (text only), `scrim` (paints its own scrim, for a button over artwork — `neutral` only)
+**Sizes:** `sm` (24px), `md` (28px, default), `lg` (36px)
 
 A button with no `children`/`customContent` but an icon renders icon-only (square). Every brand supports every appearance; `success`/`premium` derive their full ramps to match. `appearance` defaults to `strong` so a bare `<Button>` is a solid primary button.
 
@@ -173,7 +184,7 @@ import { Typography } from "../../ui/components/typography/Typography";
 
 **Elements:** `h1`–`h6`, `p`, `span`, `div`, `ul`
 **Types:** `heading-2xl` through `heading-xs`, `title-md` through `title-xs`, `body-2xl` through `body-xs`
-**Brands:** `neutral` (default), `primary`, `info`, `success`, `premium`, `danger`, `warning`, `neutral-translucent` (white-alpha translucent ramp), `none` (opt out of colour)
+**Brands:** `neutral` (default), `primary`, `info`, `success`, `premium`, `danger`, `warning`, `neutral-translucent` (white-alpha translucent ramp), `neutral-on-scrim` (the fixed `on-scrim` ramp, for text laid over a scrim — stays light whatever the theme), `none` (opt out of colour)
 **Appearances:** `weak`, `subdued`, `moderate`, `strong` — plus `inverted` on `neutral` and `neutral-translucent` only. Setting `appearance` with `brand="none"` is disallowed (it would be redundant).
 
 ### TypographyLink
@@ -240,9 +251,13 @@ function MyTabs() {
 
 ### Toolbar
 
-Horizontal toolbar made of one or more rounded `ToolbarGroup` "pills". A group is **data-driven**: pass it an array of `IToolbarAction` descriptors and it renders each as an icon `Button`. When a group has more than `maxVisible` actions (default `7`), the trailing slot becomes a kebab (`⋮`) menu and the overflow actions move into its dropdown — the same descriptor renders as a `Button` while visible and a `DropdownItem` once collapsed.
+Horizontal toolbar made of one or more rounded `ToolbarGroup` "pills". A group is **data-driven**: pass it an array of `IToolbarAction` descriptors and it renders each as an icon `Button`. When the actions don't all fit, the trailing slot becomes a kebab (`⋮`) menu and the overflow actions move into it — the same descriptor renders as a `Button` while visible and as a menu row once collapsed.
 
-**Defaults:** `maxVisible={7}`. Pass `maxVisible={null}` to disable collapsing and always render every action.
+**Responsive by default.** The `Toolbar` measures the width available to it and each group renders as many actions as fit, so the rest stay reachable in the kebab as the window narrows. This needs a width that doesn't come from the toolbar's own content, which a block-level or stretched parent gives it for free. As a flex item the toolbar is `flex-shrink: 0` and keeps every control instead, because a toolbar sized by its content can't tell how much room it has — add `flex-1` to opt it into collapsing.
+
+Use `flex-1` specifically, **not** `shrink`. Both let the toolbar narrow, but `shrink` leaves `flex-basis: auto`, so the width still comes from the content: collapsing shrinks the toolbar, the smaller toolbar reports a smaller budget, and the controls never come back out of the kebab when the window widens again. `flex-1` sets a zero basis, so the width comes from the parent and collapsing is reversible. Pair it with `justify-end` where the controls should sit against the trailing edge.
+
+**`maxVisible`** (optional) caps the number of slots regardless of available width, for groups that should stay short. Omit it to let width be the only limit. Whichever is more restrictive wins.
 
 ```tsx
 import { Toolbar } from "../../ui/components/toolbar/Toolbar";
@@ -258,63 +273,205 @@ const actions: IToolbarAction[] = [
 <Toolbar>
     <ToolbarGroup actions={actions} />
 
-    {/* Never collapse — show every action regardless of count */}
-    <ToolbarGroup actions={contextualActions} maxVisible={null} />
+    {/* Never use more than 4 slots, however wide the toolbar gets */}
+    <ToolbarGroup actions={contextualActions} maxVisible={4} />
 </Toolbar>;
 ```
 
-**`IToolbarAction` fields:** `label` (required — the accessible name, dropdown label, and button text when `showLabel`), `iconPath`, `onClick`, `disabled`, `brand` (defaults to `neutral`), `showLabel` (render the label as visible button text instead of icon-only, e.g. a "1 selected" pill).
+**`IToolbarAction` fields:** `label` (required — the accessible name, tooltip, menu label, and button text when `showLabel`), `iconPath`, `onClick`, `panel` (see below), `disabled`, `brand` (defaults to `neutral`), `showLabel` (render the label as visible button text instead of icon-only, e.g. a "1 selected" pill), `pinned` (see below).
 
 Actions are keyed internally by `label`, so labels should be unique within a group. The kebab is generated automatically — callers never author it.
 
-### Form Components
+**`panel`** makes an action open a floating surface instead of running a callback; it's the alternative to `onClick`, and the two are mutually exclusive. Pass a function of `{ close, dismiss }` returning the panel's contents — the group anchors it to whichever control it rendered, so the panel never has to know where it was opened from: under the button while the action is in the row, beside its row once it has collapsed into the overflow. `DisplayOptions` is built on this.
 
 ```tsx
-import { Input } from "../../ui/components/form/input/Input";
-import { Select } from "../../ui/components/form/select/Select";
-import { FormFieldWrap } from "../../ui/components/form/formfield/FormField";
-
-// Input with validation
-<Input id="email" label="Email" type="email" required errorMessage="Invalid email" />
-
-// Input with character counter
-<Input id="bio" label="Bio" type="text" maxLength={200} />
-
-// Select dropdown
-<Select id="country" label="Country">
-  <option value="">Select...</option>
-  <option value="us">United States</option>
-</Select>
-
-// Multiple fields with spacing
-<FormFieldWrap>
-  <Input id="first" label="First Name" type="text" required />
-  <Input id="last" label="Last Name" type="text" required />
-</FormFieldWrap>
+const actions: IToolbarAction[] = [
+    { label: "Refresh", iconPath: mdiRefresh, onClick: refresh },
+    {
+        label: "Display options",
+        iconPath: mdiTune,
+        panel: ({ close }) => <MyPanelRows onDone={close} />,
+    },
+];
 ```
+
+`close` dismisses the panel; `dismiss` also dismisses whatever it was opened from, which only differs once the action has collapsed into the overflow. Reach for it when the panel's control ends the interaction rather than adjusting something — picking a destination should put the menu away too, where toggling a setting should leave it standing.
+
+The overflow menu is a [`PopoverMenu`](#popovermenu) rather than a `Menu` precisely so a panel can open from inside it: a `Menu` closes the moment focus reaches a surface nested within it. It still presents as a menu — menu roles, focus on open, arrow-key navigation, `→` to open a panel from its row, `Escape` to close the innermost surface.
+
+**`pinned`** keeps an action out of the overflow menu, wherever it sits in the list — the unpinned actions then share whatever width is left, still collapsing from the end. The row keeps the order you gave it, so a pin holds its place rather than jumping to the front as its neighbours collapse.
+
+```tsx
+const actions: IToolbarAction[] = [
+    { label: "Install mod", iconPath: mdiPlusCircleOutline, onClick: install, pinned: true },
+    { label: "Open mods folder", iconPath: mdiFolderOpenOutline, onClick: openFolder },
+    { label: "History", iconPath: mdiHistory, onClick: showHistory },
+];
+```
+
+Use it sparingly. Pinning wins over fitting, so a group with no room for its pinned actions shows them anyway and overflows its pill rather than dropping them — and `maxVisible` won't hold them back either.
+
+**Tooltips come for free.** The controls are icon-only, so each visible one renders as a `ToolbarButton` — a `Button` wrapped in a `Tooltip` showing its `label`. The group shares one hover delay, so sweeping along the row swaps tooltips instead of re-waiting on each. Two cases deliberately get no tooltip: an action in the overflow menu (the menu already shows its label as text) and one with `showLabel` (its text is already on screen). The `label` stays the single source for the accessible name — the tooltip describes the control, it doesn't rename it.
+
+### Alert
+
+Full-width bar carrying a short message about the page it sits on, optionally with a control that acts on it. This is the replacement for react-bootstrap's `Alert` — prefer it for new work.
+
+Severity colours the **icon only**; the surface stays neutral in every state, so a stack of alerts reads as one band rather than several competing blocks.
+
+```tsx
+import { Alert } from "../../ui/components/alert/Alert";
+import { Button } from "../../ui/components/button/Button";
+
+<Alert
+    action={
+        <Button brand="neutral" size="xs" onClick={relaunch}>
+            {t("Restart Vortex")}
+        </Button>
+    }
+    severity="warning"
+>
+    {t("You need to restart Vortex to apply changes.")}
+</Alert>;
+
+{
+    /* The action is optional */
+}
+<Alert severity="success">{t("Action successful")}</Alert>;
+
+{
+    /* onDismiss adds a close button that hides the bar and calls back */
+}
+<Alert severity="info" onDismiss={() => markSeen(id)}>
+    {t("We suggest you do this")}
+</Alert>;
+```
+
+**Severities:** `info` (default), `success`, `warning`, `danger` — each picks its own icon and tints it with the matching `*-strong` token.
+
+**Dismissal:** pass `onDismiss` to get a close button at the far edge of the bar. The alert hides itself on click and then fires the callback, so callers only need the callback for the side effect (persisting the dismissal, say) — not for the hiding. The button is labelled "Dismiss"; override it with `dismissLabel`.
+
+The bar owns a 24px inline gutter and a bottom divider rather than a border and radius, so it's designed to sit edge-to-edge (no `mx-*` needed) above page content. It renders as `role="status"`; pass `role="alert"` explicitly for something genuinely interrupting. The message may wrap while the action keeps its width.
+
+### Form Components
+
+Forms are built from Headless UI's `Field` parts, which link a control to its label and descriptions themselves. There are no ids to wire up.
+
+#### TextField
+
+A text input with its label, hints, error and, given `maxLength`, a character count. `label` is required: `hideLabel` hides it on screen, not from screen readers.
+
+```tsx
+import { TextField } from "../../ui/components/form/text_field/TextField";
+
+<TextField label="Email" type="email" required errorMessage="Invalid email" />
+
+// Character count
+<TextField label="Bio" maxLength={200} hints="Keep it short" />
+
+// No visible label, but still named for screen readers
+<TextField hideLabel label="Filter categories" placeholder="Filter categories..." />
+```
+
+**Props:** everything `Input` takes except `id` (Headless UI generates the ids that link the parts), plus `label`, `hideLabel`, `hints` (a string or a list), `errorMessage`, `hideErrors` (off screen only; screen readers still get it), `showRequiredLabel` (defaults to `required`), `fieldClassName` and `leftIconPath` (an mdi icon inside the input, before the text). `className` goes on the input and `fieldClassName` on the field around it. `onChange` receives the native change event.
+
+#### SelectField
+
+A native select with its label, hints and error. It takes the same field props as `TextField`, minus the character count and icon:
+
+```tsx
+import { SelectField } from "../../ui/components/form/select_field/SelectField";
+
+<SelectField
+    label="Country"
+    required
+    value={country}
+    onChange={(event) => setCountry(event.target.value)}
+>
+    <option value="">Select...</option>
+    <option value="us">United States</option>
+</SelectField>;
+```
+
+**Props:** everything `Select` takes except `id`, plus `label`, `hideLabel`, `hints`, `errorMessage`, `hideErrors`, `showRequiredLabel` and `fieldClassName`. Options and option groups are passed as children. `onChange` receives the native change event, as before.
+
+#### CheckboxField
+
+A checkbox with its label beside it, and hints and error under both. Clicking the label toggles it.
+
+```tsx
+import { CheckboxField } from "../../ui/components/form/checkbox_field/CheckboxField";
+
+<CheckboxField label="Include logs" checked={include} onChange={setInclude} />
+
+// Rich label, e.g. a title and a note; a long one wraps with the checkbox at the top
+<CheckboxField label={<><strong>{modName}</strong> {note}</>} checked={on} onChange={setOn} />
+```
+
+**Props:** Headless UI `Checkbox` props — `checked`, `onChange(checked: boolean)`, `disabled`, `indeterminate`, `name`/`value` for form submission, `defaultChecked` — plus `label` (required, and can be rich content), `hideLabel`, `hints`, `errorMessage` and `fieldClassName`. `onChange` receives the new checked value, not an event. `className` goes on the checkbox.
+
+`Checkbox` is the bare control: a `<span role="checkbox">`, so pass `name` for the value to take part in form submission, and outside a `Field` give it an `aria-label`. `indeterminate` shows a dash and reports `aria-checked="mixed"`; `invalid` marks it with `aria-invalid` and `data-invalid`.
+
+#### Building blocks
+
+`TextField`, `SelectField`, `CheckboxField` and `SwitchField` are these parts put together. Use them directly for a layout it doesn't cover:
+
+```tsx
+import { Description } from "../../ui/components/form/field/Description";
+import { ErrorMessage } from "../../ui/components/form/field/ErrorMessage";
+import { Field } from "../../ui/components/form/field/Field";
+import { Label } from "../../ui/components/form/field/Label";
+import { Input } from "../../ui/components/form/input/Input";
+
+<Field disabled={disabled}>
+    <Label required>Name</Label>
+    <Input required invalid={!!error} />
+    <Description>Shown to other users</Description>
+    {!!error && <ErrorMessage>{error}</ErrorMessage>}
+</Field>;
+```
+
+- `Field` groups a control with its parts. `disabled` cascades to all of them.
+- `Label` names the control. `required` only adds "(Required)", so set `required` on the control as well. If you give the control its own `id`, pass the same value as `htmlFor`, or clicking the label stops focusing the control.
+- `Description` and `ErrorMessage` are both added to the control's `aria-describedby`, in the order they render. `ErrorMessage` is a `Description` styled as an error; pair it with `invalid` on the control.
+- `Input` and `Select` are the bare controls. Outside a `Field` they need an `aria-label`. `Select` draws its own chevron, so it wraps the native select in `nxm-field-control`, the same wrapper `TextField` puts around its input for the icon; its ref and `className` go on the select.
+
+Every part styles itself off the attributes Headless UI sets (`data-disabled`, `data-invalid`, `data-hover`), like `Switch`. The one exception is the focus style of `Input` and `Select`, which uses `:focus`: Headless UI sets `data-focus` only for keyboard focus, and these should show focus however they got it.
 
 ### Switch
 
-A tri-state toggle switch (xs) — `off`, `on`, and a programmatic `semi-on` ("mixed") state. Built on a visually-hidden native `<input type="checkbox">`; setting `indeterminate` renders `semi-on` and reports `aria-checked="mixed"`. Clicking only ever flips on/off — `semi-on` is set by the consumer (e.g. a master control whose children are partially on). It's controlled-visual (appearance follows the `checked`/`indeterminate` props, like `Checkbox`).
+A tri-state toggle switch (xs) — `off`, `on`, and a programmatic `semi-on` ("mixed") state. Setting `indeterminate` renders `semi-on` and reports `aria-checked="mixed"`. Clicking only ever flips on/off — `semi-on` is set by the consumer (e.g. a master control whose children are partially on).
+
+Built on Headless UI's **`Checkbox`**, not its `Switch`: ARIA only allows `aria-checked` to be true/false on `role="switch"`, and Headless UI controls that attribute, so `mixed` can't be forced onto a `Switch`. A tri-state master control is the checkbox pattern, which is what `Checkbox` implements.
 
 ```tsx
 import { Switch } from "../../ui/components/form/switch/Switch";
 
-// Controlled on/off
-<Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} aria-label="Enable" />
+// Controlled on/off, named by aria-label outside a Field. onChange receives the new checked value, not an event
+<Switch checked={enabled} onChange={setEnabled} aria-label="Enable" />
 
 // Semi-on (mixed) — e.g. a "select all" with some children on
 <Switch
   checked={allOn}
   indeterminate={someOn && !allOn}
-  onChange={(e) => setAll(e.target.checked)}
+  onChange={setAll}
   aria-label="All settings"
 />
 ```
 
-**Props:** native `<input>` attributes (minus `type`) plus `indeterminate?: boolean`.
+**Props:** Headless UI `Checkbox` props — `checked`, `onChange(checked: boolean)`, `disabled`, `indeterminate`, `name`/`value`/`form` for form submission, `defaultChecked` for uncontrolled use — plus `className`. The ref goes to the switch.
 
-> **Porting note:** when `@headlessui/react` reaches v2 (after the React upgrade), reimplement on top of HeadlessUI's `<Switch>`. The `nxm-switch` classes live on the track/thumb so they can move straight across. HeadlessUI's Switch is binary, so the tri-state stays the wrapper's responsibility (`data-state` + `indeterminate`/`aria-checked="mixed"`).
+`Switch` is the bare control: outside a `Field` it needs an `aria-label`. For a switch with its label beside it, use `SwitchField`:
+
+```tsx
+import { SwitchField } from "../../ui/components/form/switch_field/SwitchField";
+
+<SwitchField label="Auto-update" hints="Checks when Vortex starts" checked={on} onChange={setOn} />;
+```
+
+`SwitchField` takes everything `Switch` does except `id`, plus `label` (required), `hideLabel`, `hints` and `fieldClassName`. Clicking the label toggles the switch, and `disabled` covers both. There's no `errorMessage`: a switch is never invalid. To lay the parts out differently, such as the label before the switch, compose `Field`, `Label` and `Switch` yourself.
+
+The track and thumb style themselves off the attributes Headless UI sets (`data-checked`, `data-indeterminate`, `data-disabled`, `data-hover`, `data-active`, `data-focus`) rather than any state we derive ourselves. It renders a `<span role="checkbox">`, so pass `name` if the value needs to take part in form submission.
 
 ### Dropdown
 
@@ -329,9 +486,11 @@ import { DropdownDivider } from "../../ui/components/dropdown/DropdownDivider";
 
 `DropdownButton` renders a `Button` as the `Menu.Button` trigger, so it takes all the same props as `Button`.
 
+A `DropdownItem` takes the same [`brand`](#button) a `Button` does, tinting its icon and leaving the labels an even column of text to read down — except `danger`, which colours the whole row, a destructive action being the one thing in a menu that should be hard to pick by accident. [`PopoverMenu`](#popovermenu) rows brand the same way, from the same helper.
+
 ### Popover
 
-A floating panel of arbitrary interactive content built on Headless UI `Popover`. Unlike `Dropdown` (a menu of actions that closes on selection), a Popover holds controls — pickers, switches, buttons — and stays open until an outside click or Escape. `PopoverButton` renders a `Button` as the trigger (so it takes every Button prop); `PopoverPanel` holds the content.
+A floating panel of arbitrary interactive content built on Headless UI `Popover`. Unlike `Dropdown` (a menu of actions that closes on selection), a Popover holds controls — pickers, switches, buttons — and stays open until an outside click or Escape. `PopoverButton` renders a `Button` as the trigger (so it takes every Button prop); `PopoverPanel` holds the content. For a panel holding a menu of actions rather than controls, see [`PopoverMenu`](#popovermenu).
 
 ```tsx
 import { Popover } from "../../ui/components/popover/Popover";
@@ -346,7 +505,195 @@ import { mdiTune } from "@mdi/js";
 </Popover>;
 ```
 
-> **Positioning note:** the panel is positioned manually (absolute) until `@headlessui/react` reaches v2, which brings dynamic anchor positioning and proper z-index handling.
+> **Positioning note:** the panel is placed by Headless UI's `anchor` prop, which uses Floating UI to flip and shift it into view and portals it out of any clipping ancestor. It defaults to `bottom end` with a 4px gap; pass `anchor` to place it elsewhere.
+
+For a panel of settings rather than free-form content, fill it with `PopoverPanelGroup`s. Groups are separated from one another by a rule and the last ends in padding, so a panel never finishes on a divider — state the separator on the groups, not the rows, and a trailing element can't leave a dangling rule. Each group holds `PopoverPanelGroupItem` rows: `label` on the left, control on the right; omit `label` for a control-only row and place it with a `justify-*` class.
+
+```tsx
+<PopoverPanel>
+    <PopoverPanelGroup>
+        <PopoverPanelGroupItem label={t("Display as")}>
+            <Picker options={layouts} value={layout} onChange={setLayout} />
+        </PopoverPanelGroupItem>
+    </PopoverPanelGroup>
+
+    <PopoverPanelGroup>
+        <PopoverPanelGroupItem className="justify-end">
+            <TypographyLink onClick={onReset}>{t("Reset to default")}</TypographyLink>
+        </PopoverPanelGroupItem>
+    </PopoverPanelGroup>
+</PopoverPanel>
+```
+
+### PopoverMenu
+
+A menu of actions filling a `PopoverPanel`. Use it over [`Dropdown`](#dropdown) when a row has to open a surface of its own — a submenu, or a panel of settings. A `Dropdown` is a Headless UI `Menu`, and a `Menu` closes the moment focus reaches anything nested inside it; a `Popover` registers a child's portal as part of itself, so reaching into it doesn't read as leaving. What `Menu` would have given for free is supplied instead: the menu roles, focus on open, and arrow-key navigation.
+
+Rows are `IMenuAction`s — the same shape as an `IToolbarAction` minus the toolbar's own layout concerns, so an action can be handed to either. Actions arrive as **groups**, separated by a rule; an empty group is dropped rather than drawn, so a conditional group can go in as-is without leaving a rule with nothing under it.
+
+A row takes the same [`brand`](#button) a `Button` does, so an action reads the same on a toolbar as it does in the overflow menu it collapsed into. A row tints only its icon, leaving the labels an even column of text to read down — except `danger`, which colours the whole row.
+
+```tsx
+<PopoverPanel className="nxm-popover-panel-dropdown">
+    {({ close }) => (
+        <PopoverMenu
+            actions={[extensionActions, [helpCentre, viewLogs, about]]}
+            label={t("Help")}
+            onSelect={close}
+        />
+    )}
+</PopoverPanel>
+```
+
+**Props:** `actions` and `label` (the menu's accessible name) are required, as is `onSelect` — a row was activated, so put the menu away. `onClose` is only for a menu nested inside another: it closes this one and hands focus back to the row that opened it, the counterpart to `→`.
+
+Give the panel `nxm-popover-panel-dropdown`. The base panel is sized for label-and-control rows and carries no block padding, which a list of rows needs.
+
+**For a submenu**, give the row `panelRole: "menu"` alongside its `panel` — that's what tells the control it's advertising a menu rather than a settings surface, and sizes the panel to match. Nesting is a row's `panel` rendering another `PopoverMenu`; depth beyond two levels isn't exercised anywhere.
+
+```tsx
+const helpAction: IMenuAction = {
+    label: t("Help"),
+    iconPath: mdiHelpCircleOutline,
+    panelRole: "menu",
+    panel: ({ close, dismiss }) => (
+        <PopoverMenu actions={helpRows} label={t("Help")} onClose={close} onSelect={dismiss} />
+    ),
+};
+```
+
+Pass `dismiss` as the submenu's `onSelect`, not `close`: choosing a row there ends the interaction, so the menu it was opened from should go with it. Rows are focused as one flat list across group boundaries, so arrowing runs through the whole menu rather than stopping at a rule.
+
+Any row with a `panel` advertises it: a chevron on the right says the row opens a surface rather than running something, and pointing at the row opens it after a short delay — long enough that sweeping past on the way elsewhere doesn't flick panels open. Leaving the row closes it again, unless the pointer arrives in the panel; the panel is portalled, so travelling across the gap between the two fires the row's `mouseleave` and the panel has to call the close off. Clicking a row the pointer has already opened is inert rather than a toggle. `→` still opens from the keyboard, `←` and `Escape` back out.
+
+### DisplayOptions
+
+The controls for how a listing is shown (layout, what's included, …), as a tune-icon action for that page's `Toolbar`. `useDisplayOptionsAction` returns an `IToolbarAction`, so the display options ride the toolbar's overflow with every other action instead of sitting beside it — there is no standalone version. Compose the rows from `PopoverPanelGroup` and `PopoverPanelGroupItem` (see [Popover](#popover)). The panel ends in a reset link whenever `canReset` says something has been changed from its default: `onReset` puts the defaults back, and the panel stays open so the rows above visibly move with it.
+
+```tsx
+import { PopoverPanelGroup } from "../../ui/components/popover/PopoverPanelGroup";
+import { PopoverPanelGroupItem } from "../../ui/components/popover/PopoverPanelGroupItem";
+import { useDisplayOptionsAction } from "../../ui/components/display_options/useDisplayOptionsAction.hook";
+
+const displayOptions = useDisplayOptionsAction({
+    canReset: showHidden,
+    children: (
+        <PopoverPanelGroup>
+            <PopoverPanelGroupItem label={t("Show hidden items")}>
+                <Switch checked={showHidden} onChange={onToggleHidden} />
+            </PopoverPanelGroupItem>
+        </PopoverPanelGroup>
+    ),
+    onReset,
+});
+
+<Toolbar>
+    <ToolbarGroup actions={[refreshAction, displayOptions]} />
+</Toolbar>;
+```
+
+**Props:** `canReset`, `onReset` and `children` are required. `label` (names the trigger — used as both its tooltip and `aria-label`) and `resetLabel` default to translated "Display options" and "Reset to default"; pass them only to say something else. The hook appends the reset link as a final group of its own, so `children` should be the setting groups only.
+
+`canReset` is the caller's to compute, because only it knows what its defaults are — compare each setting the panel shows against the value `onReset` returns it to, and keep the two in step by naming that value once. Nothing to undo means no link, rather than one that would do nothing; because a group states its own separator, the last settings group stops drawing a rule as soon as the reset group goes away. So the link removes itself as it takes effect, while the panel stays open.
+
+The toolbar owns the trigger and anchors the panel: under the button while the action is in the row, beside its row once the action has collapsed into the overflow menu. See [Toolbar](#toolbar) for panel actions in general.
+
+### Tooltip
+
+Rich, collision-aware tooltip built on `@floating-ui/react`. `content` is arbitrary React — headings, lists, icons — not just a string. Position is resolved against the window continuously: it flips to the opposite side when the preferred one would overflow, slides along an edge when a corner would, and clamps its own width and height to the room that is left. It renders into the `#overlays` host, so tables, dashlets and scroll panes cannot clip it.
+
+**For new tooltips only.** The existing `controls/TooltipControls` components (`Button`, `IconButton`, `Icon`, `NavItem`) are untouched — don't migrate call sites to this without a deliberate decision to do so.
+
+**Defaults:** `placement="top"`, `delay={{ open: 250, close: 50 }}`, `showArrow`, non-interactive.
+
+```tsx
+import { Tooltip } from "../../ui/components/tooltip/Tooltip";
+
+// Plain label
+<Tooltip content="Deploys every enabled mod to the game folder">
+  <Button>Deploy</Button>
+</Tooltip>
+
+// Rich content — customContent gets no padding, so give it its own
+<Tooltip customContent={<ModHealthSummary mod={mod} />} placement="right">
+  <Button appearance="subdued" brand="neutral">Details</Button>
+</Tooltip>
+
+// Interactive — the pointer can travel in and use a link inside
+<Tooltip interactive customContent={<div className="px-4 py-3">…<TypographyLink>Manage it</TypographyLink></div>}>
+  <Button>Why is this hidden?</Button>
+</Tooltip>
+
+// Conditional — e.g. only explain the name when it's actually truncated
+<Tooltip content={mod.name} disabled={!isTruncated}>
+  <span className="truncate">{mod.name}</span>
+</Tooltip>
+```
+
+**Props:** `children` (the trigger), plus exactly one of `content` / `customContent`; `placement` (any Floating UI placement, e.g. `"top"`, `"right-start"`), `delay` (number, or `{ open, close }`), `disabled` (render the trigger with no tooltip), `interactive`, `showArrow`, `className` (applied to the tooltip bubble).
+
+**`content` is styled, `customContent` is not** — the same split as Button's `children`/`customContent`, and an `XOr`, so passing both (or neither) is a type error.
+
+| prop            | type        | styling                                                                     |
+| --------------- | ----------- | --------------------------------------------------------------------------- |
+| `content`       | `string`    | gets `.nxm-tooltip-content` — the tooltip's padding, font size, line height |
+| `customContent` | `ReactNode` | rendered unstyled; **you supply the padding**                               |
+
+Which prop you pass decides the styling, so the call site states its intent rather than the component sniffing the type. An always-present `.nxm-tooltip-body` wrapper carries the scroll clamp in both cases (it can't sit on `.nxm-tooltip` without clipping the arrow).
+
+> Because it's an `XOr`, a dynamically-built props object won't spread in — branch on the two cases instead. Static call sites are unaffected.
+
+Width is CSS, not a prop. `.nxm-tooltip` caps at 320px; pass a utility class to widen a specific tooltip — Tailwind sits in a higher layer than `components`, so it wins:
+
+```tsx
+<Tooltip className="max-w-lg" customContent={<LongChangelog />}>
+    …
+</Tooltip>
+```
+
+That only moves the design cap. The positioner around the bubble is still clamped to the space left in the window, so a wider cap can't push the tooltip off an edge.
+
+Stacking lives on the positioner, not the bubble, so `className` can't change it. Tooltips sit above modals (`--z-index-tooltip`); one that shows itself rather than answering a hover, like the download flyout, should sit under the modal scrim instead. Pass `positionerClassName`:
+
+```tsx
+<Tooltip persistent positionerClassName="z-(--z-index-flyout)" customContent={<Flyout />}>
+    …
+</Tooltip>
+```
+
+> **The trigger must forward a ref to a DOM node.** `Button` does; `Icon`, `Pill` and bare text do not — wrap those in a `<span className="inline-flex">`.
+
+`placement` is a preference, not a guarantee: the collision middleware treats it as the starting point and moves the tooltip if it wouldn't fit. Tooltips also open on keyboard focus and dismiss on Escape, and are non-interactive by default so they can never swallow a click aimed at what's underneath.
+
+#### TooltipDelayGroup
+
+Shares one hover delay across every `Tooltip` inside it. The first tooltip waits out the open delay; while one is showing, moving to a sibling swaps straight over. Wrap rows of icon buttons in this — without it, scanning a toolbar costs a fresh 250ms pause per button.
+
+```tsx
+import { TooltipDelayGroup } from "../../ui/components/tooltip/TooltipDelayGroup";
+
+<TooltipDelayGroup>
+    {actions.map((action) => (
+        <Tooltip key={action.label} content={action.label}>
+            <Button aria-label={action.label} leftIconPath={action.iconPath} />
+        </Tooltip>
+    ))}
+</TooltipDelayGroup>;
+```
+
+It renders no DOM of its own. Where the row needs a layout element anyway, pass `as` and that element's props instead of nesting a second node inside:
+
+```tsx
+<TooltipDelayGroup as="div" className="flex items-center gap-x-1">
+    {actions.map((action) => (
+        <Tooltip key={action.label} content={action.label}>
+            <Button aria-label={action.label} leftIconPath={action.iconPath} />
+        </Tooltip>
+    ))}
+</TooltipDelayGroup>
+```
+
+`as` takes any element type and forwards the rest of the props to it. Props are typed as `HTMLAttributes`, so `className`, `style` and the like are covered — element-specific ones (`href`, say) are not, and are dropped with no wrapper to receive them if `as` is omitted.
 
 ### Listbox
 
@@ -376,45 +723,21 @@ import { Pagination } from "../../ui/components/pagination/Pagination";
 
 ### Table
 
-Reusable, column-driven data table. Declare the columns and pass the data; sorting, per-column filtering, column show/hide, grouping, optional pagination and an empty state are handled internally.
-
-**Defaults:** filters and the column toggle auto-enable when a column opts in; pagination is **off** unless `pageSize` is set; headers are always left-aligned.
+Column-driven table drawn as one CSS grid: the column widths make its tracks and every row is a subgrid of them, so cells line up without a `<table>`. It carries the grid roles. Work in progress towards the new table design; on the Mods page it only shows while the dev tools "New table design" switch is on.
 
 ```tsx
 import { Table } from "../../ui/components/table/Table";
-import type { IColumnDef } from "../../ui/components/table/Table.types";
+import type { ITableColumn } from "../../ui/components/table/Table.types";
 
-const columns: Array<IColumnDef<Mod>> = [
-    { id: "name", header: "Name", getValue: (m) => m.name, sortable: true, filter: { type: "text" } },
-    {
-        id: "category",
-        header: "Category",
-        getValue: (m) => m.category,
-        groupable: true,
-        filter: { type: "select", options: [{ label: "UI", value: "UI" }] },
-    },
-    {
-        id: "downloads",
-        header: "Downloads",
-        getValue: (m) => m.downloads,
-        sortable: true,
-        align: "right",
-        cell: (m) => m.downloads.toLocaleString(),
-    },
+const columns: Array<ITableColumn<Mod>> = [
+    { id: "name", header: "Name", cell: (m) => m.name },
+    { id: "status", header: "Status", width: "42px", cell: (m) => <Switch checked={m.enabled} /> },
 ];
 
-// No pageSize → renders every row, no pager
-<Table columns={columns} data={mods} getRowId={(m) => m.id} />
-
-// With pagination
-<Table columns={columns} data={mods} getRowId={(m) => m.id} pageSize={50} />
+<Table columns={columns} getRowId={(m) => m.id} label="Mods" rows={mods} />;
 ```
 
-**`ITableProps` fields:** `columns`, `data`, `getRowId` (required); `pageSize` (set to paginate), `caption`, `enableFilters`, `enableColumnToggle`, `enableColumnResize` (default `true`), `columnWidths` / `onColumnWidthsChange` (restore/persist resized widths), `emptyState`, `className`.
-
-**`IColumnDef` fields:** `id`, `header` (required); `getValue` (value used for sorting/filtering and the default cell), `cell` (custom renderer), `sortable`/`sortFn`, `filter` (`text` or `select`), `align` (body cells — headers are always left), `width`, `resizable` (drag-to-resize, default `true`), `hideable`/`defaultHidden` (column toggle), `groupable`/`groupValue`/`groupLabel`.
-
-**Notes:** grouping is one column at a time — collapsible groups across the full dataset, with the pager hidden while active. Columns use fixed widths, so when their total exceeds the container the table scrolls horizontally. Users can drag a header's right edge to resize a column (never narrower than its configured `width`) via the `useColumnResize` hook, and the column menu offers a "Reset column widths" action. The table itself stays state-store-agnostic: pass `columnWidths` to restore widths and handle `onColumnWidthsChange` (fired on resize-end and reset with the full px map) to persist them. All interactive state lives in the `useTableState` hook.
+**`ITableColumn` fields:** `id`, `header`, `cell` (required); `width` (a grid track, default `minmax(280px, 1fr)`, so a flexible column keeps a readable width when the columns overflow), `align` (`start` or `end`).
 
 ### Listing / ListingLoader / NoResults
 
@@ -460,18 +783,18 @@ import { Modal, ModalWrapper, ModalPanel } from "../../ui/components/modal/Modal
 
 Decorative SVG pictograms loaded from `assets/pictograms/`. Used for illustrative purposes in empty states, onboarding, etc.
 
-**Defaults:** `size="md"`, `theme="primary"`
+**Defaults:** `size="md"`, `brand="primary"`
 
 ```tsx
 import { Pictogram } from "../../ui/components/pictogram/Pictogram";
 
 <Pictogram name="health-check" />
-<Pictogram name="health-check" size="lg" theme="premium" />
+<Pictogram brand="premium" name="health-check" size="lg" />
 ```
 
 **Sizes:** `4xs` (16px), `3xs` (24px), `2xs` (36px), `xs` (48px), `sm` (56px), `md` (80px), `lg` (96px), `xl` (112px), `2xl` (160px)
 
-**Themes:** `primary`, `premium`, `creator`, `info`, `none`
+**Brands:** `primary`, `premium`, `none`
 
 **Adding a new pictogram:**
 
@@ -479,7 +802,7 @@ The source pictogram library is the **flamework** repo at `apps/next/public/asse
 
 1. Add the SVG file to `assets/pictograms/` (the filename becomes the pictogram name)
 2. Set the SVG dimensions to `width="200" height="200" viewBox="0 0 200 200"`
-3. Replace the main fill colour with `style="fill: currentColor"` so it responds to the `theme` prop
+3. Replace the main fill colour with `style="fill: currentColor"` so it responds to the `brand` prop
 4. Add the filename (without `.svg`) to the `IPictogramName` type in `Pictogram.tsx`
 
 > Migrating a whole page to the new `Page` layout (header + pictogram + tabs)? See
@@ -504,22 +827,29 @@ import { mdiViewGrid } from "@mdi/js";
 />
 ```
 
-**Props:** `options` (`{ label, value, iconPath?/icon? }[]`), `value`, `onChange` (required); `button` (props forwarded to the trigger `ListboxButton` — Button props + `showChevron`; any `children` is ignored, the label is always the selected option), `placement` (`"left"`/`"right"`, default `"right"` — temporary until Headless UI v2), `className`.
+**Props:** `options` (`{ label, value, iconPath?/icon? }[]`), `value`, `onChange` (required); `button` (props forwarded to the trigger `ListboxButton` — Button props + `showChevron`; any `children` is ignored, the label is always the selected option), `placement` (`"left"`/`"right"`, default `"right"` — which edge of the trigger the panel aligns to), `className`.
 
 ### Pill
 
 Compact, rounded label for tags and statuses. Renders as a non-interactive `div` by default, or as a `button` when given `as="button"`. Accepts an icon via either `iconPath` (an MDI/Nexus path string) or `icon` (a custom node) — not both.
 
-**Defaults:** `pillType="default"`
+**Defaults:** `brand="neutral"`, `appearance="subdued"` — only set these when you need something different.
 
 ```tsx
 import { Pill } from "../../ui/components/pill/Pill";
 import { mdiCheckCircleOutline, mdiTag } from "@mdi/js";
 
-// Variants
+// Uses defaults (neutral, subdued)
 <Pill>Default</Pill>
-<Pill pillType="success" iconPath={mdiCheckCircleOutline}>Success</Pill>
-<Pill pillType="none">Unstyled</Pill>
+
+// Brand tints the icon, so it needs one to say anything
+<Pill brand="success" iconPath={mdiCheckCircleOutline}>Enabled</Pill>
+
+// For laying over a scrim — game art, a modal backdrop
+<Pill appearance="scrim" iconPath={mdiSteam}>Steam</Pill>
+
+// Opt out of the treatment entirely
+<Pill appearance="none">Unstyled</Pill>
 
 // With an icon (path or custom node)
 <Pill iconPath={mdiTag}>Tagged</Pill>
@@ -530,7 +860,25 @@ import { mdiCheckCircleOutline, mdiTag } from "@mdi/js";
 <Pill as="button" disabled>Disabled</Pill>
 ```
 
-**Types:** `default`, `success`, `none` (opts out of styling) — more variants to come
+**Brands:** `primary`, `info`, `neutral`, `light`, `success`, `danger`, `warning`, `premium` — Button's set plus `warning`, which the design uses on pills but not on buttons, and `light`.
+
+`light` is the achromatic brand that still wants a bright icon: `neutral` lets the icon sit at the label's weight, `light` lifts it to the strong step. It is the one brand whose icon colour depends on the appearance — the solid `--color-neutral-strong` on a surface, the fixed `--color-on-scrim-strong` over a scrim.
+
+**Appearances:** `subdued` (the bordered, transparent treatment, coloured from the theme-relative ramps), `scrim` (the same shape, painting a scrim fill of its own and drawing its achromatic colours from the fixed Scrim families, so it reads over artwork whatever the theme) and `none`, which opts out of both.
+
+`scrim` carries its own fill (`--color-scrim-moderate`), so it reads over artwork on its own and does not need a scrim already behind it. Hover firms the border rather than washing the fill.
+
+In both appearances hover lifts **the label** to the strong step, leaving the icon on whatever its brand gives it. See the **Scrims** section in `docs/frontend.md` for when a scrim is the right tool.
+
+> [!NOTE]
+> The name follows what the component paints, not what it sits on. A component that **is** a scrim takes `appearance="scrim"`; text laid **on** someone else's scrim draws from the `on-scrim` ramp instead — see `Typography`'s `neutral-on-scrim` brand.
+
+> [!NOTE]
+> `brand` still tints the icon from the ordinary brand ramps, which _are_ theme-relative. A branded icon on a scrim will shift with the theme; only the achromatic parts are pinned. `neutral` is fully scrim-safe.
+
+`brand` tints **only the icon**, leaving the label and border alone so a pill stays the quiet thing it is. A pill with no icon therefore looks the same whatever its brand — give it an `iconPath` if the colour needs to read.
+
+> **Migration note:** `pillType` was replaced by `brand` + `appearance`. `pillType="default"` is now the default (drop it), `pillType="success"` is `brand="success"`, and `pillType="none"` is `appearance="none"`.
 
 ### Image
 
@@ -545,7 +893,7 @@ import { Image } from "../../ui/components/image/Image";
 <Image alt="Preview" src={url} imageType="mod" isBlurred />
 ```
 
-**Image types:** `collection` (4:5 portrait), `mod` (16:9 landscape), `other` (sized by container)
+**Image types:** `avatar` (1:1 square), `collection` (4:5 portrait), `game` (2:3 portrait), `mod` (16:9 landscape), `other` (sized by container)
 
 #### AdultAwareImage
 
@@ -565,7 +913,7 @@ import { AdultAwareImage } from "../../ui/components/image/AdultAwareImage";
 Small diamond badge denoting premium membership.
 
 ```tsx
-import { PremiumBadge } from "../../ui/components/premium_badge/PremiumBadge";
+import { PremiumBadge } from "../../ui/components/badges/premium_badge/PremiumBadge";
 
 <PremiumBadge />;
 ```

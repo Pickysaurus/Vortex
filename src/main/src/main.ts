@@ -1,3 +1,7 @@
+// TODO: remove polyfill with Node.js 26 upgrade
+import { install } from "temporal-polyfill/shim";
+install();
+
 // IPC handler for forked child processes requesting Electron app info
 if (process.send) {
   process.on("message", (msg: unknown) => {
@@ -41,7 +45,8 @@ if (process.env.VORTEX_E2E === "1") {
   }
 }
 
-import { initAdaptorHost } from "./adaptors";
+import { NativePathResolver } from "@vortex/shared/filesystem";
+
 import Application from "./Application";
 import { parseCommandline } from "./cli";
 import { init as initDownloadIpc } from "./downloading/ipc";
@@ -54,12 +59,18 @@ import {
   sendPendingNativeCrashReport,
   sendReportFile,
 } from "./errorReporting";
+import { NodeFileSystemBackendImpl } from "./filesystem/backend";
+import { NodeFileSystemImpl } from "./filesystem/filesystem-impl";
+import { initFileSystem } from "./filesystem/instance";
+import { PathResolverRegistryImpl } from "./filesystem/path-resolver-registry";
 import { getVortexPath } from "./getVortexPath";
 import { init as initIpcHandlers } from "./ipcHandlers";
 import { log } from "./logging";
 import StylesheetCompiler from "./stylesheetCompiler";
 import { initTelemetryIpcHandler } from "./telemetry/ipcHandler";
 import { createMainTelemetryProvider } from "./telemetry/setup";
+import { init as initUploadIpc } from "./uploading/ipc";
+import { UploadManager } from "./uploading/manager";
 
 process.env["UV_THREADPOOL_SIZE"] = (os.cpus().length * 2).toString();
 
@@ -297,14 +308,19 @@ async function main(): Promise<void> {
   process.on("unhandledRejection", handleError);
 
   const downloadManager = new DownloadManager({ concurrency: 1 });
+  const uploadManager = new UploadManager({ userAgent: `Vortex/${app.getVersion()}` });
 
-  initIpcHandlers();
+  // The registry holds exactly one resolver for the universal `native`
+  // scheme. Path providers are owned by the app, never by the registry.
+  const fs = new NodeFileSystemImpl(
+    new NodeFileSystemBackendImpl(),
+    new PathResolverRegistryImpl([new NativePathResolver()]),
+  );
+  initFileSystem(fs);
+
+  initIpcHandlers(fs);
   initDownloadIpc(downloadManager);
-  initAdaptorHost().catch((err: unknown) => {
-    log("warn", "Failed to initialize adaptor host", {
-      error: err instanceof Error ? err.message : "unknown error",
-    });
-  });
+  initUploadIpc(uploadManager);
   initTelemetryIpcHandler();
 
   StylesheetCompiler.init();

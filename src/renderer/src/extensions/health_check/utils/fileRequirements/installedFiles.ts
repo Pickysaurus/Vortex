@@ -4,11 +4,12 @@ import type { IMod } from "@/extensions/mod_management/types/IMod";
 import { nexusGamesProm } from "@/extensions/nexus_integration/util";
 import { makeFileUID, makeModUID } from "@/extensions/nexus_integration/util/UIDs";
 import { activeProfile } from "@/extensions/profile_management/selectors";
-import type { IProfile } from "@/extensions/profile_management/types/IProfile";
+import { log } from "@/logging";
 import type { IExtensionApi } from "@/types/IExtensionContext";
 import { getSafe } from "@/util/storeHelper";
 
 import renderModName from "../../../mod_management/util/modName";
+import { collectionManagedTags, isCollectionManaged } from "../shared/collectionManaged";
 
 /**
  * A file the user already has installed (a Vortex mod)
@@ -94,28 +95,6 @@ export interface IInstalledFileRef {
 }
 
 /**
- * Reference tags of mods pulled in by a collection installed on the active
- * profile; files carrying one satisfy requirements but don't emit their own.
- * Edit `countsForProfile` to change which collections count.
- */
-function collectionManagedTags(mods: { [modId: string]: IMod }, profile: IProfile): Set<string> {
-  const countsForProfile = (collection: IMod): boolean => profile.modState?.[collection.id] != null;
-
-  const tags = new Set<string>();
-  for (const mod of Object.values(mods)) {
-    if (mod.type !== "collection" || !countsForProfile(mod)) {
-      continue;
-    }
-    for (const rule of mod.rules ?? []) {
-      if (rule.type === "requires" && rule.reference?.tag != null) {
-        tags.add(rule.reference.tag);
-      }
-    }
-  }
-  return tags;
-}
-
-/**
  * Resolve a Nexus file UID for a mod, or return undefined if not possible.
  * Shared by both gather functions below.
  */
@@ -167,9 +146,7 @@ export async function gatherInstalledFiles(api: IExtensionApi): Promise<IInstall
       fileUID,
       modId: mod.id,
       enabled: getSafe(profile.modState, [mod.id, "enabled"], false),
-      emitRequirements: !(
-        attributes.referenceTag != null && collectionTags.has(attributes.referenceTag)
-      ),
+      emitRequirements: !isCollectionManaged(mod, collectionTags),
     });
   }
 
@@ -285,10 +262,14 @@ export function makeDownloadedFileHydrator(
   const refByUID = new Map(refs.map((ref): [string, IDownloadedFileRef] => [ref.fileUID, ref]));
 
   return (fileUID) => {
+    // A ref miss is a normal negative lookup; callers try installed before downloaded.
     const ref = refByUID.get(fileUID);
     if (!ref) return undefined;
     const download = downloads[ref.downloadId];
-    if (!download) return undefined;
+    if (!download) {
+      log("debug", "unable to hydrate downloaded file", { fileUID, downloadId: ref.downloadId });
+      return undefined;
+    }
     return toDownloadedFile(ref, download, modDetailsByUID.get(ref.modUID));
   };
 }
@@ -352,12 +333,14 @@ export function makeInstalledFileHydrator(
   const refByUID = new Map(refs.map((ref): [string, IInstalledFileRef] => [ref.fileUID, ref]));
 
   return (fileUID) => {
+    // A ref miss is a normal negative lookup; callers try installed before downloaded.
     const ref = refByUID.get(fileUID);
     if (!ref) {
       return undefined;
     }
     const mod = mods[ref.modId];
     if (!mod) {
+      log("debug", "unable to hydrate installed file", { fileUID, modId: ref.modId });
       return undefined;
     }
     const modUID = resolveModUID(mod.attributes ?? {}, gameId);

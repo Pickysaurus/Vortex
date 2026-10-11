@@ -2,8 +2,8 @@ import { mdiMonitorArrowDownVariant } from "@mdi/js";
 import React from "react";
 import { useTranslation } from "react-i18next";
 
+import { PremiumBadge } from "@/ui/components/badges/premium_badge/PremiumBadge";
 import { Button } from "@/ui/components/button/Button";
-import { PremiumBadge } from "@/ui/components/premium_badge/PremiumBadge";
 
 import { useIssue, useIssueTracking } from "../../hooks/HealthCheckTracking.context";
 import { useModRequirementActions } from "../../hooks/useModRequirementActions";
@@ -33,8 +33,7 @@ export const ListingRow = ({ api, entry, isHidden, onOpen, onToggleHide }: IList
 
   const handleInstall = () => {
     trackOneClickInstallClicked({
-      mod_id: mod.modId,
-      mod_name: mod.modName,
+      mod_uid: mod.uid,
       mod_version: mod.mainFile?.version ?? "",
       is_adult_content: mod.mainFile?.adultContent ?? false,
     });
@@ -63,7 +62,6 @@ export const ListingRow = ({ api, entry, isHidden, onOpen, onToggleHide }: IList
             <Button
               appearance="moderate"
               brand="neutral"
-              size="sm"
               onClick={(e) => {
                 e.stopPropagation();
                 onOpen();
@@ -106,20 +104,22 @@ export const ListingRow = ({ api, entry, isHidden, onOpen, onToggleHide }: IList
             ? t("detail::item::author_note", { note: mod.notes })
             : t("detail::item::may_require_file")
         }
-        title={t("listing::item::title", { modName: mod.requiredBy.modName })}
+        title={t("shared::mod_may_be_required_for", { modName: mod.requiredBy.modName })}
         onOpen={onOpen}
       />
 
       <PremiumModal
+        api={api}
         isOpen={showPremiumModal}
         modCount={1}
-        modId={mod.modId}
+        modUID={mod.uid}
         trigger="single_install"
         onClose={() => setShowPremiumModal(false)}
         onDownload={() => {
           setShowPremiumModal(false);
           openModPage();
         }}
+        onPremiumUnlocked={() => void installInApp()}
       />
     </>
   );

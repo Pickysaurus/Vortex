@@ -368,3 +368,119 @@ context.registerMainPage("savegame", "Save games", MySavegamePage, {
 - [ ] Replace `yarn`/`npx` commands with `pnpm`/`pnpm exec` in build scripts
 - [ ] Remove runtime packages from `devDependencies` (now provided by `vortex-api` peer dependencies)
 - [ ] Adapt `resolutions` field from `package.json`
+
+---
+
+## Vortex 2.x: React 18
+
+Vortex now runs React **18.3.1** (previously 17.0.2). The renderer still uses React's legacy rendering mode, which behaves identically to React 17 at runtime.
+
+**If your extension is already published: no action needed.** Compiled extensions continue to work unmodified - Vortex supplies React at runtime and the runtime behavior is unchanged.
+
+**When you next rebuild your extension**, your `@nexusmods/vortex-api` peer dependencies will pull in `@types/react` 18, and you may see new TypeScript errors. They are type-level only; here is the complete list with fixes:
+
+### 1. `Property 'children' does not exist on type ...`
+
+`@types/react` 18 removed the implicit `children` prop. Declare it explicitly on any component props that accept children:
+
+```ts
+// before
+interface IMyPanelProps {
+    title: string;
+}
+
+// after
+interface IMyPanelProps {
+    title: string;
+    children?: React.ReactNode;
+}
+```
+
+For function components typed with `React.FC`, you can instead use `React.FC<React.PropsWithChildren<IMyPanelProps>>`.
+
+### 2. `Type '...' is not assignable to type 'ReactNode'`
+
+`ReactNode` is stricter in the 18 types - plain objects and component _instances_ no longer qualify. If you were passing something unusual as a child, render it explicitly or cast at the call site:
+
+```tsx
+// before
+<div>{someObject}</div>
+// after
+<div>{String(someObject)}</div> // or render it properly
+```
+
+### 3. Removed type aliases
+
+| Removed in @types/react 18                     | Replace with                             |
+| ---------------------------------------------- | ---------------------------------------- |
+| `React.StatelessComponent<P>` / `React.SFC<P>` | `React.FC<P>`                            |
+| `React.ReactText`                              | `string \| number`                       |
+| `React.ReactChild`                             | `React.ReactElement \| string \| number` |
+
+> **Note:** Two Vortex API types (`IExtensionContext` registration surfaces and `IMainPage`) that previously referenced `StatelessComponent` now use `React.FC` - this is source-compatible; no change needed unless you aliased those types yourself.
+
+### If `npm install` fails with ERESOLVE
+
+Some of Vortex's pinned dependencies (notably `react-select@1.3.0`) declare a React peer range capped below 18, which strict npm resolution rejects. Install with:
+
+    npm install --legacy-peer-deps
+
+or add the equivalent override for your package manager (pnpm: `peerDependencyRules.allowedVersions`; yarn: `resolutions`). Vortex itself supplies these packages at runtime, so the peer warning has no runtime effect.
+
+### Deprecated-but-working APIs (heads-up only)
+
+`ReactDOM.render`, `ReactDOM.findDOMNode`, and the legacy context API (`contextTypes` / `childContextTypes`) continue to work in Vortex's React 18. React logs deprecation warnings for them in development builds. They will be removed by React in a future major version, so migrating away when convenient is recommended - but nothing breaks today.
+
+## Vortex 2.x: `util.steam` and `util.epicGamesLauncher`
+
+`util.steam` and `util.epicGamesLauncher` are deprecated as of **2.8** and removed in **2.10**. Both now delegate to `util.GameStoreHelper`; call it directly instead.
+
+They keep working until 2.10. Each deprecated call logs a warning once per session, and any member not listed below also warns and returns `undefined`.
+
+### What to change
+
+| Deprecated                                     | Replacement                                      |
+| ---------------------------------------------- | ------------------------------------------------ |
+| `util.steam.findByAppId(id)`                   | `util.GameStoreHelper.findByAppId(id, "steam")`  |
+| `util.steam.findByName(name)`                  | `util.GameStoreHelper.findByName(name, "steam")` |
+| `util.steam.id`                                | the literal string `"steam"`                     |
+| `util.epicGamesLauncher.findByAppId(id)`       | `util.GameStoreHelper.findByAppId(id, "epic")`   |
+| `util.epicGamesLauncher.findByName(name)`      | `util.GameStoreHelper.findByName(name, "epic")`  |
+| `util.epicGamesLauncher.isGameInstalled(name)` | no drop-in, see below                            |
+
+Lookup behaviour is identical: same matchers, `^name$`-anchored name matching, same `GameEntryNotFound` rejection when nothing is found.
+
+```diff
+  function findGame() {
+-   return util.steam.findByAppId(STEAM_ID).then(game => game.gamePath);
++   return util.GameStoreHelper.findByAppId(STEAM_ID, "steam").then(game => game.gamePath);
+  }
+```
+
+`epicGamesLauncher.isGameInstalled` has no drop-in replacement. If you're passing an Epic app id (a codename such as `"Ovenbird"`), an app id lookup is all you need:
+
+```js
+function isGameInstalled(appId) {
+    return util.GameStoreHelper.findByAppId(appId, "epic")
+        .then(() => true)
+        .catch(() => false);
+}
+```
+
+The old method also fell back to a name lookup when the app id missed. Vortex's own Epic extensions dropped that fallback when they migrated. Only add it back (`.catch(() => util.GameStoreHelper.findByName(value, "epic")...)`) if you know you're passing a display name rather than an app id.
+
+### Prefer `findByAppId`
+
+`findByName` matches the store's display name, which changes between editions and localisations. App ids don't. If you're currently calling `findByName` and the game has a stable app id, switch to `findByAppId` while you're in there rather than porting the name lookup across.
+
+### Don't guard the new call
+
+`GameStoreHelper` has accepted a store id since 2019, so the replacement works on older Vortex as well. Extensions can't declare a Vortex version requirement and Vortex updates them automatically, so one build has to work for every user. Call the new API unconditionally rather than adding a `util.GameStoreHelper !== undefined` check.
+
+### If you don't update
+
+In 2.10 `util.steam` is `undefined` and the call throws a `TypeError`. These lookups usually sit in `findGame` or `queryPath`, so the game stops being discovered.
+
+### Promise types
+
+`GameStoreHelper` returns Bluebird promises today; a later release moves `IGameStore` to native promises. `.then()`, `.catch()` and `await` are unaffected. Bluebird-only methods on the result (`.tap()`, `.map()`, `.reflect()`, `.return()`) would break, so prefer the standard ones.

@@ -24,6 +24,8 @@ export interface IHealthCheckEntry<TData = unknown> {
    * events either side of that change won't join.
    */
   issueId?: string;
+  /** UID of the mod that raised the issue, reported as `source_mod_uid`. */
+  sourceModUID?: string;
   /** The check this entry belongs to; selects the content via the registry. */
   checkId: HealthCheckId;
   /** Drives the severity icon/colour in the shared shell. */
@@ -61,6 +63,16 @@ export interface IBulkInstallItem {
   key: string;
   /** Trigger this item's download/install. */
   install: () => void;
+  /** The mods that require this one, merged across duplicates, noted or not. */
+  requiredFor?: string[];
+  /** Set when the mod's author left a note; install all asks before installing these. */
+  notedRequirement?: INotedRequirement;
+}
+
+export interface INotedRequirement {
+  modUID: string;
+  modName: string;
+  note: string;
 }
 
 /**
@@ -72,9 +84,9 @@ export interface IHealthCheckContent {
   /** Map this check's result (from state) into listing entries. */
   selectEntries: (state: IState) => IHealthCheckEntry[];
   /** Renders a listing row for one of this check's entries. */
-  ListingRow: FC<IListingRowProps>;
+  ListingRow: FC<React.PropsWithChildren<IListingRowProps>>;
   /** Renders the detail body (below the shared chrome) for one entry. */
-  DetailView: FC<IDetailViewProps>;
+  DetailView: FC<React.PropsWithChildren<IDetailViewProps>>;
   /** Whether the shell offers hide controls (tabs / hide-all) for this check. */
   supportsHide?: boolean;
   /** Whether the given entry is currently hidden (provider-owned state). */

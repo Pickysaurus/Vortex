@@ -456,6 +456,96 @@ describe("InstallDriver completion decision", () => {
   });
 });
 
+describe("InstallDriver health-check suppression", () => {
+  test("releases the suppressed health checks once the finished install is closed", async ({
+    makeDriver,
+  }) => {
+    const h = makeDriver({
+      mods: { [GAME_ID]: { [defaultFixture.collection.id]: defaultFixture.collection } },
+      downloads: { [defaultFixture.download.id]: defaultFixture.download },
+      profiles: { [profile.id]: profile },
+    });
+    let released = false;
+    Object.assign(h.api.ext, {
+      withSuppressedTests: (_tests: string[], cb: () => PromiseLike<void>) =>
+        cb().then(() => {
+          released = true;
+        }),
+    });
+    await h.driver.start(profile, defaultFixture.collection);
+    setSessionStatus(h, [memberRule], "installed");
+    h.emit("did-install-dependencies", GAME_ID, defaultFixture.collection.id, false);
+    await vi.waitFor(() => expect(h.driver.step).toBe("review"));
+
+    await h.driver.continue();
+
+    await vi.waitFor(() => expect(released).toBe(true));
+  });
+
+  test("holds one suppression when an unfinished install is started again", async ({
+    makeDriver,
+  }) => {
+    const h = makeDriver({
+      mods: { [GAME_ID]: { [defaultFixture.collection.id]: defaultFixture.collection } },
+      downloads: { [defaultFixture.download.id]: defaultFixture.download },
+      profiles: { [profile.id]: profile },
+    });
+    let held = 0;
+    Object.assign(h.api.ext, {
+      withSuppressedTests: (_tests: string[], cb: () => PromiseLike<void>) => {
+        held += 1;
+        return cb().then(() => {
+          held -= 1;
+        });
+      },
+    });
+    await h.driver.start(profile, defaultFixture.collection);
+    // the member stays pending, so the install can be started again
+    h.emit("did-install-dependencies", GAME_ID, defaultFixture.collection.id, false);
+    await vi.waitFor(() => expect(h.driver.installDone).toBe(true));
+
+    await h.driver.start(profile, defaultFixture.collection);
+
+    await vi.waitFor(() => expect(held).toBe(1));
+  });
+
+  test("releases the suppression when the game-version prompt is cancelled", async ({
+    makeDriver,
+  }) => {
+    // game versions on the download, read without a fetch
+    const download = makeDownload({
+      ...defaultFixture.download,
+      modInfo: {
+        ...defaultFixture.download.modInfo,
+        nexus: {
+          ...defaultFixture.download.modInfo.nexus,
+          revisionInfo: { modFiles: [], gameVersions: [{ reference: "9.9.9" }] },
+        },
+      },
+    });
+    const h = makeDriver({
+      mods: { [GAME_ID]: { [defaultFixture.collection.id]: defaultFixture.collection } },
+      downloads: { [download.id]: download },
+      profiles: { [profile.id]: profile },
+    });
+    let held = 0;
+    Object.assign(h.api.ext, {
+      withSuppressedTests: (_tests: string[], cb: () => PromiseLike<void>) => {
+        held += 1;
+        return cb().then(() => {
+          held -= 1;
+        });
+      },
+    });
+    h.setNextDialog({ action: "Cancel", input: {} });
+
+    await h.driver.start(profile, defaultFixture.collection);
+
+    expect(h.dialogCalls.map((call) => call.title)).toContain("Game version mismatch");
+    await vi.waitFor(() => expect(held).toBe(0));
+  });
+});
+
 describe("InstallDriver installRecommended", () => {
   // "Install optional mods" (dialog) clears the durable skip on the optional members and re-runs the
   // NORMAL collection dependency install (the same install-dependencies event begin() uses) rather
@@ -722,5 +812,98 @@ describe("InstallDriver journey: re-attribution of an already-installed member",
     await h.driver.start(profile, fixture.collection);
 
     expect(h.driver.isInstallComplete(false)).toBe(false);
+  });
+});
+
+describe("InstallDriver collection membership tags", () => {
+  // A member mod can belong to more than one collection: identity (here the file hash) is what
+  // attributes it, and each collection's tag is recorded so it stays recognisable as their member.
+  const sharedRule = makeRule({
+    type: "requires",
+    reference: makeReference({ tag: "ours", fileMD5: "shared-hash" }),
+  });
+  const sharedFixture = makeCollectionFixture({ id: "col-shared", rule: sharedRule });
+  const sharedMod = makeMod({
+    id: "m-shared",
+    attributes: {
+      referenceTag: "theirs",
+      referenceTags: ["theirs"],
+      fileMD5: "shared-hash",
+    },
+  });
+
+  test("records the installing rule's tag on a member whose mod carries another's", async ({
+    startCollection,
+  }) => {
+    const h = await startCollection(sharedFixture);
+    h.setState((draft) => {
+      draft.persistent.mods[GAME_ID][sharedMod.id] = sharedMod;
+    });
+
+    h.emit("did-install-mod", GAME_ID, sharedFixture.download.id, sharedMod.id);
+
+    await vi.waitFor(() => {
+      expect(
+        h.getState().persistent.mods[GAME_ID][sharedMod.id].attributes?.referenceTags,
+      ).toContain("ours");
+    });
+    // the other collection's tag is kept, so its own rules still match this mod
+    expect(h.getState().persistent.mods[GAME_ID][sharedMod.id].attributes?.referenceTags).toContain(
+      "theirs",
+    );
+  });
+
+  // A member already present when the collection is added is never queued and emits no install
+  // event, so the tag has to be recorded while the install session is built.
+  test("records the rule's tag on a member that was already installed at start", async ({
+    makeDriver,
+  }) => {
+    const h = makeDriver({
+      mods: {
+        [GAME_ID]: {
+          [sharedFixture.collection.id]: sharedFixture.collection,
+          [sharedMod.id]: sharedMod,
+        },
+      },
+      downloads: { [sharedFixture.download.id]: sharedFixture.download },
+      profiles: { [profile.id]: profile },
+    });
+
+    await h.driver.start(profile, sharedFixture.collection);
+
+    const attributes = h.getState().persistent.mods[GAME_ID][sharedMod.id].attributes;
+    expect(attributes?.referenceTags).toContain("ours");
+    // the user may have installed it themselves, so it is not marked as pulled in by a collection
+    expect(attributes?.installedAsDependency).toBeUndefined();
+  });
+
+  // Two members can resolve to the same installed mod (same file, pinned twice), so the tags are
+  // recorded per mod rather than per member - one write per member would only keep the last tag.
+  test("records both rules' tags when two members resolve to the same installed mod", async ({
+    makeDriver,
+  }) => {
+    const firstRule = makeRule({
+      type: "requires",
+      reference: makeReference({ tag: "ours-first", fileMD5: "shared-hash" }),
+    });
+    const secondRule = makeRule({
+      type: "requires",
+      reference: makeReference({ tag: "ours-second", fileMD5: "shared-hash" }),
+    });
+    const fixture = buildCollectionFixture("col-twice", [firstRule, secondRule]);
+    const h = makeDriver({
+      mods: {
+        [GAME_ID]: { [fixture.collection.id]: fixture.collection, [sharedMod.id]: sharedMod },
+      },
+      downloads: { [fixture.download.id]: fixture.download },
+      profiles: { [profile.id]: profile },
+    });
+
+    await h.driver.start(profile, fixture.collection);
+
+    const tags = h.getState().persistent.mods[GAME_ID][sharedMod.id].attributes?.referenceTags;
+    expect(tags).toContain("ours-first");
+    expect(tags).toContain("ours-second");
+    expect(tags).toContain("theirs");
   });
 });

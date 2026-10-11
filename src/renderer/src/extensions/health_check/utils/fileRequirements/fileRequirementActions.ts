@@ -1,4 +1,5 @@
 import { knownGames } from "@/extensions/gamemode_management/selectors";
+import renderModName from "@/extensions/mod_management/util/modName";
 import { shouldShowPremiumAd } from "@/extensions/nexus_integration/selectors";
 import { nexusGames } from "@/extensions/nexus_integration/util";
 import { convertGameIdReverse } from "@/extensions/nexus_integration/util/convertGameId";
@@ -7,7 +8,8 @@ import { setModsEnabled } from "@/extensions/profile_management/actions/profiles
 import { activeProfile } from "@/extensions/profile_management/selectors";
 import { log } from "@/logging";
 import type { IExtensionApi } from "@/types/IExtensionContext";
-import { opn, renderModName, sanitizeCSSId } from "@/util/api";
+import opn from "@/util/opn";
+import { sanitizeCSSId } from "@/util/util";
 
 import { trackedInstall } from "../shared/installTracking";
 import type { IssueAnalyticsIdentity } from "../shared/tracking";
@@ -39,7 +41,8 @@ function modPageUrl(ref: INexusFileRef): string | undefined {
 }
 
 /**
- * Download and install a missing / wrong-version file, then make it the active version.
+ * Download and install a missing / wrong-version file, then make it the active version,
+ * disabling `enabledFile` when the download replaces a wrong version of the same chain.
  * Free users can't 1-click install, so open the file page instead (website download); the
  * premium upsell is out of MVP scope.
  */
@@ -47,6 +50,7 @@ export async function downloadFileRequirement(
   api: IExtensionApi,
   candidate: IFileRequirementCandidate,
   identity?: IssueAnalyticsIdentity,
+  enabledFile?: IInstalledFile,
 ): Promise<boolean> {
   if (shouldShowPremiumAd(api.getState())) {
     openFilePage(api, candidate);
@@ -74,8 +78,7 @@ export async function downloadFileRequirement(
       api,
       {
         ...identity,
-        mod_id: mod.id,
-        mod_name: candidate.modName,
+        mod_uid: candidate.modUID,
         mod_version: candidate.version,
       },
       async () => {
@@ -100,7 +103,7 @@ export async function downloadFileRequirement(
           ),
         );
 
-        await activateInstalledVersion(api, modId);
+        await activateInstalledVersion(api, modId, enabledFile);
       },
     );
 
@@ -159,8 +162,7 @@ export async function installDownloadedFile(
       api,
       {
         ...identity,
-        mod_id: decodeUID(file.modUID)?.id ?? 0,
-        mod_name: file.modName,
+        mod_uid: file.modUID,
         mod_version: file.version,
       },
       async () => {
